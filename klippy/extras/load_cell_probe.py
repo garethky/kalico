@@ -362,6 +362,18 @@ class LoadCellProbeConfigHelper:
         self._force_safety_limit_param = intParamHelper(
             config, "force_safety_limit", minval=100, maxval=5000, default=2000
         )
+        # pullback move
+        self._pullback_distance_param = floatParamHelper(
+            config, "pullback_distance", minval=0.01, maxval=2.0, default=0.2
+        )
+        sps = self._sensor.get_samples_per_second()
+        self._pullback_speed_param = floatParamHelper(
+            config,
+            "pullback_speed",
+            minval=0.1,
+            maxval=1.0,
+            default=sps * 0.001,
+        )
 
     def get_tare_samples(self, gcmd=None):
         tare_time = self._tare_time_param.get(gcmd)
@@ -373,6 +385,12 @@ class LoadCellProbeConfigHelper:
 
     def get_safety_limit_grams(self, gcmd=None):
         return self._force_safety_limit_param.get(gcmd)
+
+    def get_pullback_speed(self, gcmd=None):
+        return self._pullback_speed_param.get(gcmd)
+
+    def get_pullback_distance(self, gcmd=None):
+        return self._pullback_distance_param.get(gcmd)
 
     def get_rest_time(self):
         return self._rest_time
@@ -687,9 +705,11 @@ class TappingMove:
         self,
         config: configfile.ConfigWrapper,
         load_cell_primitives: LoadCellPrimitives,
+        config_helper: LoadCellProbeConfigHelper,
     ):
         self._printer = config.get_printer()
         self._load_cell_primitives = load_cell_primitives
+        self._config_helper = config_helper
         # track results of the last tap
         self._last_result = None
         self._is_last_result_valid = False
@@ -713,6 +733,17 @@ class TappingMove:
     ):
         return self._load_cell_primitives.home_start(print_time)
 
+    # Perform the pullback move and returns the time when the move will end
+    def pullback_move(self, gcmd):
+        toolhead = self._printer.lookup_object("toolhead")
+        pullback_pos = toolhead.get_position()
+        pullback_pos[2] += self._config_helper.get_pullback_distance(gcmd)
+        pos = [None, None, pullback_pos[2]]
+        toolhead.manual_move(pos, self._config_helper.get_pullback_speed(gcmd))
+        toolhead.flush_step_generation()
+        pullback_end = toolhead.get_last_move_time()
+        return pullback_end
+
     # perform a complete tapping cycle
     def probing_move(self, pos, speed, gcmd) -> tuple[list[float], bool]:
         self._is_last_result_valid = False
@@ -720,11 +751,10 @@ class TappingMove:
         epos, collector = self._load_cell_primitives.probing_move(
             self, pos, speed, gcmd
         )
+        # do the pullback move
+        pullback_end_time = self.pullback_move(gcmd)
         # collect samples from the tap
-        toolhead = self._printer.lookup_object("toolhead")
-        toolhead.flush_step_generation()
-        move_end = toolhead.get_last_move_time()
-        results = collector.collect_until(move_end)
+        results = collector.collect_until(pullback_end_time)
         samples = check_sensor_errors(results, self._printer)
         # Analyze the tap data
         ppa = TapAnalysis(samples)
@@ -909,7 +939,9 @@ class LoadCellPrinterProbe:
             config_helper,
         )
         homing_move = HomingMove(config, load_cell_primitives)
-        self._tapping_move = TappingMove(config, load_cell_primitives)
+        self._tapping_move = TappingMove(
+            config, load_cell_primitives, config_helper
+        )
         # printer integration
         LoadCellProbeCommands(config, load_cell_primitives)
         wrapper = LoadCellEndstopWrapper(
