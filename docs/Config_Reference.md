@@ -6009,6 +6009,15 @@ sensor_type:
 #   The time in seconds used for taring the load_cell before each probe. The
 #   default value is: 5 / 50 = 0.1. This collects samples from 5 cycles of
 #   50Hz / 6 cycles of 60Hz mains power to cancel power line noise.
+#pullback_distance: 0.2
+#   The distance in mm to slowly raise the probe to perform precise Z=0
+#   measurments. This move occurs immediately after the probe detects contact.
+#   The distance needs to be approximatly 2x the distance required for the probe
+#   to break contact with the bed. Valid range is 0.01 to 2.0 mm.
+#   The default is 0.2 mm.
+#pullback_speed:
+#   The speed in mm/s for the pullback move after probe trigger. Valid range is
+#   0.1 to 1.0 mm/s. The default is set to 1 micron (0.001mm) per sensor sample.
 #z_offset:
 #speed:
 #samples:
