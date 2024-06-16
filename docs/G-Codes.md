@@ -1071,6 +1071,8 @@ corresponding settings from the
 - `NOTCH_FILTER_FREQUENCIES=<list of frequency_hz>`
 - `NOTCH_FILTER_QUALITY=<quality>`
 - `TARE_TIME=<seconds>`
+- `PULLBACK_DISTANCE=<mm>`
+- `PULLBACK_SPEED=<mm/s>`
 
 ### [manual_probe]
 
