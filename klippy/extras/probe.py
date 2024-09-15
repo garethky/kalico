@@ -481,11 +481,11 @@ class PrinterProbe:
     def _move(self, coord, speed):
         self.printer.lookup_object("toolhead").manual_move(coord, speed)
 
-    def _calc_mean(self, positions):
+    def _calc_mean(self, positions) -> list[float]:
         count = float(len(positions))
         return [sum([pos[i] for pos in positions]) / count for i in range(3)]
 
-    def _calc_median(self, positions):
+    def _calc_median(self, positions) -> list[float]:
         z_sorted = sorted(positions, key=(lambda p: p[2]))
         middle = len(positions) // 2
         if (len(positions) & 1) == 1:
@@ -521,7 +521,7 @@ class PrinterProbe:
 
     def _run_probe_with_retries(
         self, speed: float, retry_session: RetrySession, gcmd: GCodeCommand
-    ):
+    ) -> list[float]:
         """Probe for a single good result with retries based on strategy"""
         while retry_session.can_retry():
             self._move(retry_session.get_probe_position(), self.retry_speed)
@@ -529,7 +529,7 @@ class PrinterProbe:
             pos, is_good = self._probe(speed, gcmd)
             if retry_session.evaluate_probe(is_good):
                 # return the x/y of the original requested location
-                return retry_session.get_position() + (pos[2],)
+                return list(retry_session.get_position() + (pos[2],))
             # Probe was rejected, retry
             self._retract(gcmd)
             retry_session.scrub_nozzle()
@@ -682,11 +682,19 @@ class PrinterProbe:
         for i in range(len(positions)):
             deviation_sum += pow(positions[i][2] - avg_value, 2.0)
         sigma = (deviation_sum / len(positions)) ** 0.5
+        # calculate the average delta between successive probes
+        delta_sum = 0
+        for i in range(1, len(positions)):
+            delta_sum += abs(positions[i][2] - positions[i - 1][2])
+        avg_delta = delta_sum / (len(positions) - 1)
         # Show information
+        decimals = 6
         gcmd.respond_info(
-            "probe accuracy results: maximum %.6f, minimum %.6f, range %.6f, "
-            "average %.6f, median %.6f, standard deviation %.6f"
-            % (max_value, min_value, range_value, avg_value, median, sigma)
+            f"probe accuracy results: maximum {max_value:.{decimals}f}, "
+            f"minimum {min_value:.{decimals}f}, range {range_value:.{decimals}f}, "
+            f"average {avg_value:.{decimals}f}, median {median:.{decimals}f}, "
+            f"standard deviation {sigma:.{decimals}f}, "
+            f"average delta {avg_delta:.{decimals}f}"
         )
 
     def probe_calibrate_finalize(self, kin_pos):
@@ -838,6 +846,7 @@ class ProbePointsHelper:
         default_points=None,
         option_name="points",
         use_offsets=False,
+        enable_horizontal_z_clearance: bool = False,
     ):
         self.printer = config.get_printer()
         self.finalize_callback = finalize_callback
@@ -850,7 +859,14 @@ class ProbePointsHelper:
                 option_name, seps=(",", "\n"), parser=float, count=2
             )
         def_move_z = config.getfloat("horizontal_move_z", 5.0)
-        self.default_horizontal_move_z = def_move_z
+        self.horizontal_move_z = self.default_horizontal_move_z = def_move_z
+        # horizontal_z_clearance mode is off by default
+        self.enable_horizontal_z_clearance = enable_horizontal_z_clearance
+        self.horizontal_z_clearance = self.default_horizontal_z_clearance = None
+        if enable_horizontal_z_clearance:
+            z_clearance = config.getfloat("horizontal_z_clearance", None)
+            self.default_horizontal_z_clearance = z_clearance
+            self.horizontal_z_clearance = z_clearance
         self.adaptive_horizontal_move_z = config.getboolean(
             "adaptive_horizontal_move_z", False
         )
@@ -899,7 +915,11 @@ class ProbePointsHelper:
         if not self.results and not self.enforce_lift_speed:
             # Use full speed to first probe position
             speed = self.speed
-        toolhead.manual_move([None, None, self.horizontal_move_z], speed)
+        z_pos = self.horizontal_move_z
+        # use horizontal_z_clearance for inter-point moves
+        if self.horizontal_z_clearance is not None and self.results:
+            z_pos = toolhead.get_position()[2] + self.horizontal_z_clearance
+        toolhead.manual_move([None, None, z_pos], speed)
 
     def _next_pos(self):
         nextpos = list(self.probe_points[len(self.results)])
@@ -955,6 +975,10 @@ class ProbePointsHelper:
 
         def_move_z = self.default_horizontal_move_z
         self.horizontal_move_z = gcmd.get_float("HORIZONTAL_MOVE_Z", def_move_z)
+        if self.enable_horizontal_z_clearance:
+            self.horizontal_z_clearance = gcmd.get_float(
+                "HORIZONTAL_Z_CLEARANCE", self.default_horizontal_z_clearance
+            )
 
         enforce_lift_speed = gcmd.get_int(
             "ENFORCE_LIFT_SPEED", None, minval=0, maxval=1

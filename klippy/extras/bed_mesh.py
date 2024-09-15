@@ -8,6 +8,8 @@ import json
 import logging
 import math
 
+from klippy.gcode import GCodeCommand
+
 from . import probe
 from .danger_options import get_danger_options
 
@@ -287,6 +289,11 @@ class BedMesh:
                     )
         self.last_position[:] = newpos
 
+    def generate_points(
+        self, gcmd: GCodeCommand, profile_name: str = "default"
+    ):
+        return self.bmc.generate_points(gcmd, profile_name)
+
     def get_status(self, eventtime=None):
         return self.status
 
@@ -491,6 +498,7 @@ class BedMeshCalibrate:
             self.probe_finalize,
             self._get_adjusted_points(),
             use_offsets=True,
+            enable_horizontal_z_clearance=True,
         )
         self.probe_helper.minimum_points(3)
         self.gcode = self.printer.lookup_object("gcode")
@@ -994,14 +1002,20 @@ class BedMeshCalibrate:
             adj_pts.append(self.zero_ref_pos)
         return adj_pts
 
-    cmd_BED_MESH_CALIBRATE_help = "Perform Mesh Bed Leveling"
-
-    def cmd_BED_MESH_CALIBRATE(self, gcmd):
-        self._profile_name = gcmd.get("PROFILE", "default")
+    def generate_points(
+        self, gcmd: GCodeCommand, profile_name: str = "default"
+    ):
+        self._profile_name = gcmd.get("PROFILE", profile_name)
         if not self._profile_name.strip():
             raise gcmd.error("Value for parameter 'PROFILE' must be specified")
         self.bedmesh.set_mesh(None)
         self.update_config(gcmd)
+        return self._get_adjusted_points()
+
+    cmd_BED_MESH_CALIBRATE_help = "Perform Mesh Bed Leveling"
+
+    def cmd_BED_MESH_CALIBRATE(self, gcmd):
+        self.generate_points(gcmd)
         self.probe_helper.start_probe(gcmd)
 
     def probe_finalize(self, offsets, positions):

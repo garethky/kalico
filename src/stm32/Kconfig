@@ -123,6 +123,34 @@ choice
         select MACH_STM32F1
 endchoice
 
+config STM32F072_CLOCK_OUT_PA3
+    bool "Enable PA3 clock output (TIM15)"
+    depends on MACH_STM32F072
+    help
+      Enable fixed-frequency clock output on PA3 using TIM15.
+      Used for external ADC clock generation (e.g., ADS131M02).
+      TIM15 will not be available for other features when enabled.
+
+choice
+    prompt "PA3 clock frequency (MHz)" if STM32F072_CLOCK_OUT_PA3
+    config STM32F072_CLOCK_OUT_PA3_FREQ_2MHZ
+        bool "2"
+    config STM32F072_CLOCK_OUT_PA3_FREQ_4MHZ
+        bool "4"
+    config STM32F072_CLOCK_OUT_PA3_FREQ_6MHZ
+        bool "6"
+    config STM32F072_CLOCK_OUT_PA3_FREQ_8MHZ
+        bool "8"
+endchoice
+
+config STM32F072_CLOCK_OUT_PA3_FREQ
+    int
+    default 2 if STM32F072_CLOCK_OUT_PA3_FREQ_2MHZ
+    default 4 if STM32F072_CLOCK_OUT_PA3_FREQ_4MHZ
+    default 6 if STM32F072_CLOCK_OUT_PA3_FREQ_6MHZ
+    default 8 if STM32F072_CLOCK_OUT_PA3_FREQ_8MHZ
+    default 0
+
 config MACH_STM32F103x6
     depends on LOW_LEVEL_OPTIONS && MACH_STM32F103
     bool "Only 10KiB of RAM (for rare stm32f103x6 variant)"
