@@ -895,8 +895,8 @@ class LoadCellProbeConfigHelper:
         # most probes don't move horizontally, but this one does
         self._retry_speed = floatParamHelper(config, 'retry_speed',
             above=0.1, default=50.)
-        self._sample_retract_distance = floatParamHelper(config,
-            'sample_retract_distance', above=0.0, default = 2.0)
+        self._sample_retract_dist = floatParamHelper(config,
+            'sample_retract_dist', above=0.0, default = 2.0)
         self._lift_speed = floatParamHelper(config, 'lift_speed', above=0.0)
 
     def get_tare_samples(self, gcmd=None):
@@ -925,8 +925,8 @@ class LoadCellProbeConfigHelper:
     def get_retry_speed(self, gcmd=None):
         return self._retry_speed.get(gcmd)
 
-    def get_sample_retract_distance(self, gcmd=None):
-        return self._sample_retract_distance.get(gcmd)
+    def get_sample_retract_dist(self, gcmd=None):
+        return self._sample_retract_dist.get(gcmd)
 
     def get_lift_speed(self, gcmd=None):
         return self._lift_speed.get(gcmd)
@@ -1511,7 +1511,8 @@ class TapSession:
 
     def _get_probe_params(self, gcmd=None):
         """Get probe parameters from gcmd or use config defaults"""
-        sample_retract_dist = self._config_helper.get_sample_retract_dist(gcmd)
+        sample_retract_dist = self._config_helper.get_sample_retract_dist(
+            gcmd)
         lift_speed = self._config_helper.get_lift_speed(gcmd)
         return {
             'sample_retract_dist': sample_retract_dist,

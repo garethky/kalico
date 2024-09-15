@@ -1,3 +1,31 @@
+# Load Cell Community Testing Branch
+
+If you are testing load cells in Kalico this is the branch to use!
+
+Please review the documentation: [Load Cell](./docs/Load_Cell.md)
+
+There is a debugging tool that will let you see the load cell output and probing taps:[Klipper Load Cell Debugging Tool](https://observablehq.com/@garethky/klipper-load-cell-debugging-tool). If you are testing you should get this set up to see how things are working.
+
+#### Progress Tracker
+
+This is being slowly shipped to klipper's mainline branch. It's a very large change and has to be broken up into multiple PRs to make reviewing easier:
+
+##### PRs to klipper Mainline
+
+1. ✅ [Bulk ADC Sensors](https://github.com/Klipper3d/klipper/pull/6555) - Shipped
+2. ✅ [Add input_mux and vref options to ADS1220 sensor](https://github.com/Klipper3d/klipper/pull/6713) - Shipped
+3. ☑️ [PR: Enable multiple z_thermal_adjust sections](https://github.com/Klipper3d/klipper/pull/6855) - Active
+4. ✅ [Load cell gram scale](https://github.com/Klipper3d/klipper/pull/6729) - Shipped
+5. ✅ [PR: Load Cell Probe](https://github.com/Klipper3d/klipper/pull/6871) - Shipped
+6. ☑️ [PR: Load Cell Tap Analysis](https://github.com/Klipper3d/klipper/pull/) - Active
+7. ☑️ [PR: Adaptive horizontal_move_z](https://github.com/Klipper3d/klipper/pull/6933]) - Active
+
+##### PRs not yet submitted
+
+2. `average_delta` metric for `PROBE_ACCURACY` command
+
+---
+
 <p align="center"><a href="https://docs.kalico.gg"><img align="center" src="docs/logo/kalico-big.png" alt="Kalico Logo"></a></p>
 
 [![Action Status](https://github.com/KalicoCrew/kalico/actions/workflows/ci-build_test.yaml/badge.svg?branch=main)](https://github.com/KalicoCrew/kalico/actions/workflows/ci-build_test.yaml)
