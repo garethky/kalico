@@ -5963,8 +5963,73 @@ data_ready_pin:
 #   and 'analog_supply'. Default is 'internal'.
 ```
 
+#### ADS131M02
+The ADS131M02 is a 24 bit, 2-channel delta-sigma ADC supporting sample rates up
+to 32Khz. It uses SPI communication and provides high precision measurements
+suitable for load cell probing.
+```
+[load_cell]
+sensor_type: ads131m02
+cs_pin:
+#   The pin connected to the ADS131M02 chip select line. This parameter must
+#   be provided.
+#spi_speed: 8192000
+#   SPI bus speed. The default is 8.192 MHz.
+#spi_bus:
+#spi_software_sclk_pin:
+#spi_software_mosi_pin:
+#spi_software_miso_pin:
+#   See the "common SPI settings" section for a description of the
+#   above parameters.
+data_ready_pin:
+#   Pin connected to the ADS131M02 data ready (DRDY) line. This parameter must
+#   be provided.
+#channel: 0
+#   Comma separated channel list of channels to enable and sum. Valid channels are 0 and 1.
+#   The default is 0.
+#gain: 128
+#   Programmable gain amplifier setting. Valid values are 1, 2, 4, 8, 16, 32,
+#   64, and 128. The default is 128.
+#sample_rate: 500
+#   Sample rate in samples per second. Valid values are 250, 500, 1000, 2000,
+#   4000, 8000, 16000, and 32000. The default is 500.
+```
+
+#### ADS131M04
+The ADS131M04 is a 24 bit, 4-channel delta-sigma ADC with simultaneous
+sampling. The MCU streams the sum of enabled channels as the primary reading
+and appends individual channel readings.
+```
+[load_cell]
+sensor_type: ads131m04
+cs_pin:
+#   The pin connected to the ADS131M04 chip select line. This parameter must
+#   be provided.
+#spi_speed: 8192000
+#   SPI bus speed. The default is 8.192 MHz.
+#spi_bus:
+#spi_software_sclk_pin:
+#spi_software_mosi_pin:
+#spi_software_miso_pin:
+#   See the "common SPI settings" section for a description of the
+#   above parameters.
+data_ready_pin:
+#   Pin connected to the ADS131M04 data ready (DRDY) line. This parameter must
+#   be provided.
+#channels: 0
+#   Comma separated channel list to enable and sum. Valid channels are: 0, 1, 2, 3. The default is channel 0.
+#gain: 128
+#   Programmable gain amplifier setting. Valid values are 1, 2, 4, 8, 16, 32,
+#   64, and 128. The same gain is applied to all channels.
+#sample_rate: 500
+#   Sample rate in samples per second. Valid values are 250, 500, 1000, 2000,
+#   4000, 8000, 16000, 32000. The default is 500.
+```
+
 ### [load_cell_probe]
 Load Cell Probe. This combines the functionality of a [probe] and a [load_cell].
+
+See also [simple_tap_classifier] for tap validation configuration.
 
 ```
 [load_cell_probe]
@@ -5976,15 +6041,22 @@ sensor_type:
 #sensor_orientation:
 #   These parameters must be configured before the probe will operate.
 #   See the [load_cell] section for further details.
-#force_safety_limit: 5000
-#   The safe limit for probing force relative to the reference_tare_counts on
-#   the load_cell. The default is +/-2Kg.
+#force_safety_limit: 2000
+#   The safe force limit for starting a probe. This is relative to the 
+#   reference_tare_counts which is the sensor's absolute 0 force value.
+#   Set to 0 to disable. The default is +/-2Kg.
+#drift_safety_limit: 1000
+#   The maximum absolute force change allowed while probing. Set to 0 to disable.
+#   The default is +/-1Kg.
 #trigger_force: 75.0
 #   The force that the probe will trigger at. 75g is the default.
 #drift_filter_cutoff_frequency: 0.8
 #   Enable optional continuous taring while homing & probing to reject drift.
 #   The value is a frequency, in Hz, below which drift will be ignored. This
-#   option requires the SciPy library. Default: None
+#   option requires the SciPy library. Can be automatically calibrated using 
+#   `LOAD_CELL_PROBE_CALIBRATE CALIBRATION=DRIFT_FILTER`. 
+#   See [Drift Filter Calibration](Load_Cell.md#drift-filter-calibration).
+#   Default: None
 #drift_filter_delay: 2
 #   The delay, or 'order', of the drift filter. This controls the number of
 #   samples required to make a trigger detection. Can be 1 or 2, the default
@@ -6009,6 +6081,41 @@ sensor_type:
 #   The time in seconds used for taring the load_cell before each probe. The
 #   default value is: 5 / 50 = 0.1. This collects samples from 5 cycles of
 #   50Hz / 6 cycles of 60Hz mains power to cancel power line noise.
+#disable_pullback_move: False
+#   When True, disables the pullback move and tap analysis after probe trigger.
+#   The probe will use the raw trigger position instead of the calculated Z=0
+#   from tap analysis. This reduces probe accuracy but may be useful for
+#   troubleshooting or compatibility testing. The default is False.
+#pullback_distance: 0.2
+#   The distance in mm to slowly raise the probe to perform precise Z=0
+#   measurments. This move occurs immediately after the probe detects contact.
+#   The distance needs to be approximatly 2x the distance required for the probe
+#   to break contact with the bed. Can be automatically calibrated using
+#   `LOAD_CELL_PROBE_CALIBRATE CALIBRATION=PULLBACK_DISTANCE`.
+#   See [Pullback Distance Calibration](Load_Cell.md#pullback-distance-calibration).
+#   Valid range is 0.01 to 2.0 mm. The default is 0.2 mm.
+#pullback_speed:
+#   The speed in mm/s for the pullback move after probe trigger. Valid range is
+#   0.1 to 1.0 mm/s. The default is set to 1 micron (0.001mm) per sensor sample.
+#tap_classifier_module:
+#   Optional module for custom tap validation. When not specified, the default
+#   TapQualityClassifier is used. Setting a custom classifier overrides the default
+#   validation logic.
+#min_tap_quality: 40.0
+#   The minimum acceptable tap quality score. Valid range is 0 to 100 percent.
+#   The default is 40%.
+#decompression_angle:
+#   The average angle of the decompression line for clean taps. The futher the
+#   measured decompression angle is from this angle, the worse its tap quality score.
+#   There is no default, this must be measured. It is a number in degrees
+#   between 0 and 90. Can be automatically calibrated using
+#   `LOAD_CELL_PROBE_CALIBRATE CALIBRATION=DECOMPRESSION_ANGLE`.
+#   See [Decompression Angle Calibration](Load_Cell.md#decompression-angle-calibration).
+#max_approach_force_pct: 0.5
+#max_departure_force_pct: 0.25
+#max_baseline_force_delta_pct: 0.25
+#max_dwell_force_drop_pct: 0.75
+#   Maximums for tap quality checks.
 #z_offset:
 #speed:
 #samples:
@@ -6021,6 +6128,8 @@ sensor_type:
 #deactivate_gcode:
 #   See the "[probe]" section for a description of the above parameters.
 ```
+
+See [Tap Quality Components](Load_Cell.md#tap-quality-components) for more details on maximum for tap quality.
 
 ## Board specific hardware support
 
