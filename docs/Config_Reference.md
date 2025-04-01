@@ -2503,7 +2503,7 @@ z_offset:
 #   printers that have an outlier first sample.
 #⚠️ bad_probe_strategy: RETRY
 #   Strategy to apply when a probe attempt is considered "bad" based on
-#   the probe's quality detection logic. If the probe doesnt support 
+#   the probe's quality detection logic. If the probe doesn't support 
 #   quality detection all probes are assumed to be good.
 #   One of: fail, ignore, retry or circle.
 #   - fail: Stop immediately with an error on first bad probe.
@@ -5966,6 +5966,8 @@ data_ready_pin:
 ### [load_cell_probe]
 Load Cell Probe. This combines the functionality of a [probe] and a [load_cell].
 
+See also [simple_tap_classifier] for tap validation configuration.
+
 ```
 [load_cell_probe]
 sensor_type:
@@ -6028,9 +6030,21 @@ sensor_type:
 #   The speed in mm/s for the pullback move after probe trigger. Valid range is
 #   0.1 to 1.0 mm/s. The default is set to 1 micron (0.001mm) per sensor sample.
 #tap_classifier_module:
-#   Optional module for custom tap validation. When not specified, the default
-#   TapQualityClassifier is used. Setting a custom classifier overrides the default
-#   validation logic.
+#   Optional module for custom tap validation. The default is TapQualityClassifier.
+#   Setting a custom classifier overrides TapQualityClassifier with your implementation.
+#min_tap_quality: 40.0
+#   The minimum acceptable tap quality score. Valid range is 0 to 100 percent.
+#   The default is 40%.
+#decompression_angle:
+#   The average angle of the decompression line for clean taps. The further the
+#   measured decompression angle is from this angle, the worse its tap quality score.
+#   There is no default, this must be measured. It is a number in degrees
+#   between 0 and 90.
+#max_approach_force: 50
+#max_departure_force: 25
+#max_baseline_force_delta: 25
+#max_dwell_force_drop: 75
+#   Maximums for tap quality checks expressed as a percentage.
 #z_offset:
 #speed:
 #samples:
@@ -6043,6 +6057,8 @@ sensor_type:
 #deactivate_gcode:
 #   See the "[probe]" section for a description of the above parameters.
 ```
+
+See [Tap Quality Components](Load_Cell.md#tap-quality-components) for more details on maximum for tap quality.
 
 ## Board specific hardware support
 

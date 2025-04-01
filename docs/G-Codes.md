@@ -1087,6 +1087,8 @@ corresponding settings from the
 - `TARE_TIME=<seconds>`
 - `PULLBACK_DISTANCE=<mm>`
 - `PULLBACK_SPEED=<mm/s>`
+- `MIN_TAP_QUALITY=<percent>`
+- `DECOMPRESSION_ANGLE=<angle>`
 
 ### [manual_probe]
 
