@@ -2523,6 +2523,7 @@ z_offset:
 #   - X, Y: The current toolhead position
 #⚠️ scrubbing_frequency: 0
 #   Controls how often the nozzle scrubber is used in response to bad probes.
+#   Controls how often the nozzle scrubber is used in response to bad probes.
 #   If set to a positive number, N, the nozzle_scrubber_gcode will be invoked
 #   after every Nth bad probe. 1 will run the scrubber after every bad probe.
 #   0 will disable scrubbing. The default is 0.
@@ -5919,6 +5920,8 @@ data_ready_pin:
 ### [load_cell_probe]
 Load Cell Probe. This combines the functionality of a [probe] and a [load_cell].
 
+See also [simple_tap_classifier] for tap validation configuration.
+
 ```
 [load_cell_probe]
 sensor_type:
@@ -5980,6 +5983,14 @@ sensor_type:
 #   Optional module for custom tap validation. When not specified, the default
 #   SimpleTapClassifier is used. Setting a custom classifier overrides the default
 #   validation logic.
+#min_tap_quality: 40.0
+#   The minimum acceptable tap quality score. Valid range is 0 to 100 percent.
+#   The default is 40%.
+#decompression_angle:
+#   The average angle of the decompression line for clean taps. The futher the
+#   measured decompression angle is from this angle, the worse its tap quality score.
+#   There is no default, this must be measured. It is a number in degrees
+#   between 0 and 90.
 #z_offset:
 #speed:
 #samples:

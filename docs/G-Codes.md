@@ -1061,7 +1061,8 @@ Commands that perform probes, such as [`PROBE`](#probe),
 [`BED_MESH_CALIBRATE`](#bed_mesh_calibrate) etc. will accept additional
 parameters if a `[load_cell_probe]` is defined. The parameters override the
 corresponding settings from the
-[`[load_cell_probe]`](./Config_Reference.md#load_cell_probe) configuration:
+[`[load_cell_probe]`](./Config_Reference.md#load_cell_probe) and
+[`[simple_tap_classifier]`](./Config_Reference.md#simple_tap_classifier) configurations:
 - `FORCE_SAFETY_LIMIT=<grams>`
 - `TRIGGER_FORCE=<grams>`
 - `DRIFT_FILTER_CUTOFF_FREQUENCY=<frequency_hz>`
@@ -1073,6 +1074,8 @@ corresponding settings from the
 - `TARE_TIME=<seconds>`
 - `PULLBACK_DISTANCE=<mm>`
 - `PULLBACK_SPEED=<mm/s>`
+- `MIN_TAP_QUALITY=<percent>`
+- `DECOMPRESSION_ANGLE=<angle>`
 
 ### [manual_probe]
 

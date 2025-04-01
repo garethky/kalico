@@ -353,18 +353,11 @@ Each line in the plot has a name:
 
 *Figure 1a — Tap plot showing the named tap lines: Approach (flat baseline before contact), Compression (steep rise as force builds), Dwell (stable high force while probe settles), Decompression (force drop during pullback), and Departure (return to baseline as pullback finishes). Vertical colored lines mark the boundaries between phases.*
 
-The intersection of the Decompression line and the Departure line is reported as the Z=0 point by the probe. This is the most critical point point on the graph.
+The intersection of the Decompression line and the Departure line is reported as the Z=0 point by the probe. This is the most critical point on the graph.
 
-The pullback move is very small (0.2mm) and very slow. Becasue of its slow speed the slope of the decompression line is more shallow than the compression line. This improves the probes accuracy because the force changes less over time, meaning the z resolution of the probe is increased. Essentially the pullback move is a high resolution force scan of the bed at one point. The pullback move is controlled by the `pullback_speed` and `pullback_dist` options in the config. The default settings scan at 1 ADC sample per micron, giving the probe an expected resolution of 1 micron.
+The pullback move is very small (~0.2mm) and very slow. Because of its slow speed the slope of the decompression line is more shallow than the compression line. This improves the probes accuracy because the force changes less over time, meaning the z resolution of the probe is increased. Essentially the pullback move is a high resolution force scan of the bed at one point. The pullback move is controlled by the `pullback_speed` and `pullback_dist` options in the config. The default settings scan at 1 ADC sample per micron, giving the probe an expected resolution of 1 micron.
 
 Based on the shape of the plot it is possible to tell if the probe is good or not. The probe performs some basic checks on the order of the points and the shape formed by the lines. If it isn't "tap" shaped the probe is reported as not good. See [Tap validation error codes](#tap-validation-error-codes) for details on validation failures.
-
-#### TK Some use for this diagram
-
-<a id="fig-tap-angles"></a>
-![Tap validation angles on real force data](img/load-cell/tap-angles.png)
-
-*Figure 1b — Tap validation angles. The SimpleTapClassifier validates four interior angles between adjacent phases: Compression Start Angle (purple, between approach and compression), Compression End Angle (blue, between compression and dwell), Decompression Start Angle (orange, between dwell and decompression), and Decompression End Angle (green, between decompression and departure). These angles characterize tap geometry and can detect anomalies like slow collisions (shallow angles) or adhesion issues (distorted angles). See [simple_tap_classifier configuration](Config_Reference.md#simple_tap_classifier) for angle constraint parameters.*
 
 #### Tap Validation Error Codes
 
@@ -381,7 +374,43 @@ When a bad quality tap is detected a specific error code is logged. Most of thes
 | `TOO_FEW_PROBING_MOVES`       | Fewer trapezoidal moves than expected                                    | This is uncommon                                                                                                      |
 | `TOO_MANY_PROBING_MOVES`      | More trapezoidal moves than expected                                     | This is uncommon                                                                                                      |
 
+#### Tap Quality
+
+In addition to the basic tap shape checks, a module called the **Tap Quality Classifier** gives each tap a quality score from 0 to 100. The classifier's main goal is to differentiate between clean taps that can be used and oozy taps that cannot.
+
+The classifier uses ratio metrcis to make it more transferrable between different printers. It uses ratios of the total force in the compression line as this is the best reference metric in the tap. This allows other quantities to scale with the compression force. Whereas absolute metrics (angles, forces) work well for a single physical toolhead design and probing configuration but break when those things are changed.
+
+##### Tap Quality Components
+
+| Component                      | Description                                                                                                                                                                   | Why?                                                                                                                    |
+|--------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
+| Approach Force                 | The change in force in the approach line over the compression force. This is expected to be close to 0.                                                                       | A large force in the approach line is associated with hitting molten plastic before hitting the bed                     |
+| Departure Force                | The change in force in the departure line over the compression force. This is expected to be close to 0.                                                                      | The nozzle should be in free air during this move, so any distortions are usually due to ooze pulling on the nozzle.    |
+| Baseline Force                 | The change in force between the point where the nozzle makes contact with the bed and where is breaks contact, over the compression force. This is expected to be close to 0. | You expect a scale to read zero when you take the weight off, this checks                                               |
+| Dwell Force Drop               | The drop in force during the dwell over the compression force.                                                                                                                | While some drop is not unusual, large drops are associated with plastic oozing out from between the nozzle and the bed. |
+| Normalized Decompression Angle | How closely the slope of the decompression line matches the ideal decompression slope.  Normalized as `(actual - expected) / expected`                                        | Ooze can pull on the nozzle, changing the slope. This ruins the accuracy of the measurement.                            |
+
+These factors are all combined to give the final quality score. The only component that has to be measured on the printer is the **Normalized Decompression Angle**.
+
+Each component has a maximum cutoff value. If the component is above the cutoff, the tap quality score drops to 0%:
+
+| Component        | Threshold | Config Parameter                  |
+|------------------|-----------|-----------------------------------|
+| Approach Force   | 50%       | max_approach_force_pct=0.5        |
+| Departure Force  | 25%       | max_departure_force_pct=0.25      |
+| Baseline Force   | 25%       | max_baseline_force_delta_pct=0.25 |
+| Dwell Force Drop | 75%       | max_dwell_force_drop_pct=0.75     |
+
+#### Tap Quality Error Codes
+If the default tap quality classifier is active it may report additional error codes:
+
+| Error Code                    | Description                                                              | Common Causes                                                                                                         |
+|-------------------------------|--------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| `LOW_COMPRESSION_FORCE`       | The calculated compression force is less than the `trigger_force`        | Fouling: hot plastic on the nozzle caused the force to rise very slowly. Probing something very soft.                 |
+| `LOW_TAP_QUALITY`             | The tap quality is below the `min_tap_quality` setting                   | Fouling: tap features are recognizable but distorted. Configured `min_tap_quality` too low.                           |
+
 All validation errors are logged for troubleshooting.
+
 
 ## Developer Notes
 
@@ -401,9 +430,29 @@ Next a basic set of sanity checks are performed:
 
 3. **Break-contact timing**: The probe validates that break contact time occurs within the middle two thirds of the pullback move. Too early or too late make the analysis less reliable.
 
-If any of these checks fail the probe is marked as bad. If they all pass the configured `TapClassifierModule` is invoked to further decide if the tap is good of bad.
+If any of these checks fail the probe is marked as bad. If they all pass the configured `TapClassifierModule` is invoked to further decide if the tap is good of bad. The built in classifier is called `SimpleTapClassifier` and is turned on by default.
 
-**Custom tap classifiers**: A `TapClassifierModule` can be configured via the `tap_classifier_module` configuration value. The classifier receives the `TapAnalysis` object and can perform additional validation or modify the tap position calculation. With an appropriate data set it is possible to use Machine Learning techniques (e.g. [Decision Trees](https://scikit-learn.org/stable/modules/tree.html)) to build a more accurate tap classifier that is tailored to a specific printer's hardware.
+**Custom tap classifiers**: It is possible to completely replace the built in  `SimpleTapClassifier` with a custom implementation via the `tap_classifier_module` configuration value. The classifier receives the `TapAnalysis` object and can perform additional validation or modify the tap position calculation. With an appropriate data set it is possible to use Machine Learning techniques (e.g. [Decision Trees](https://scikit-learn.org/stable/modules/tree.html)) to build a more accurate tap classifier that is tailored to a specific printer's hardware.
+
+#### Visual Examples of Failed Taps
+
+For quick diagnosis, compare your tap trace to [Figure 1](#fig-tap-phases) (valid tap) and the failure examples below. Match the pattern to the error code in the table above.
+
+![Low decompression force failure](img/load-cell/bad-tap-low-decompression-force.png)
+
+*Figure 2 — Low decompression force (`LOW_DECOMPRESSION_FORCE`). The build sheet did not make firm contact with the heater bed (plastic debris the sheet), causing force to drop significantly during the dwell phase. The decompression force is too low compared to the trigger force.*
+
+![Major plastic fouling](img/load-cell/bad-tap-major-plastic-fouling.png)
+
+*Figure 3 — Major plastic fouling. Soft plastic on the nozzle causes a major drop in peak force and continued force decay during dwell as the plastic oozes out from between the nozzle and bed. This can result in `LOW_DECOMPRESSION_FORCE` errors.*
+
+![Minor plastic adhesion during pullback](img/load-cell/bad-tap-minor-plastic-adhesion.png)
+
+*Figure 4 — Minor plastic adhesion. Oozing plastic inside the nozzle orifice causes a small force dip during the pullback phase (circled). the plastic pulls the nozzle down as it lifts off the build sheet. This tap passed validation as the anomaly is minor, but indicates the nozzle temperature may be too high or plastic is oozing.*
+
+![Baseline force inconsistent failure](img/load-cell/bad-tap-baseline-force-inconsistent.png)
+
+*Figure 5 — Baseline force inconsistent (`BASELINE_FORCE_INCONSISTENT`). Plastic on the nozzle causes a "slow collision" visible as a positive slope in the approach line. The compression angle is much less than 90 degrees, and the baseline force differs significantly between approach and departure.*
 
 ### ADC Sensor Selection
 
