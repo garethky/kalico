@@ -5966,6 +5966,8 @@ data_ready_pin:
 ### [load_cell_probe]
 Load Cell Probe. This combines the functionality of a [probe] and a [load_cell].
 
+See also [simple_tap_classifier] for tap validation configuration.
+
 ```
 [load_cell_probe]
 sensor_type:
@@ -6031,6 +6033,20 @@ sensor_type:
 #   Optional module for custom tap validation. When not specified, the default
 #   TapQualityClassifier is used. Setting a custom classifier overrides the default
 #   validation logic.
+#min_tap_quality: 40.0
+#   The minimum acceptable tap quality score. Valid range is 0 to 100 percent.
+#   The default is 40%.
+#decompression_angle:
+#   The average angle of the decompression line for clean taps. The futher the
+#   measured decompression angle is from this angle, the worse its tap quality score.
+#   There is no default, this must be measured. It is a number in degrees
+#   between 0 and 90.
+#max_approach_force_pct: 0.5
+
+#max_departure_force_pct: 0.25
+#max_baseline_force_delta_pct: 0.25
+#max_dwell_force_drop_pct: 0.75
+#   Maximums for tap quality checks.
 #z_offset:
 #speed:
 #samples:
@@ -6043,6 +6059,8 @@ sensor_type:
 #deactivate_gcode:
 #   See the "[probe]" section for a description of the above parameters.
 ```
+
+See [Tap Quality Components](Load_Cell.md#tap-quality-components) for more details on maximum for tap quality.
 
 ## Board specific hardware support
 
