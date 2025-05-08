@@ -214,13 +214,16 @@ This sets the most force the probe will allow before it triggers. If the measure
 **Watchdog task:**
 During homing, a watchdog monitors sensor data. If the sensor fails to send measurements for 2 sample periods, the MCU shuts down with error `!! Load Cell Probe Error: timed out waiting for sensor data`. This usually indicates an ADC fault or inadequate grounding. Ensure the frame, power supply, and print bed are grounded. Multiple ground connections may be required. Sand anodized aluminum at ground connection points for good electrical contact.
 
+**Tap validation and retries:**
+The probe validates each tap's shape, break-contact timing, and motion chronology. Invalid taps are rejected (`is_valid=False`) and retried based on the probe's configured `bad_probe_strategy` and `bad_probe_retries`. This prevents accepting fouled or poor-quality taps. See [Tap validation error codes](#tap-validation-error-codes) for validation failure types. Note that validation catches many but not all bad taps—proper nozzle temperature and cleanliness remain essential.
+
 ### Testing Probe Operation
 
 `LOAD_CELL_TEST_TAP [COUNT=<taps>] [TIMEOUT=<seconds>]`\
 _Default COUNT: 3_\
 _Default TIMEOUT: 30_
 
-Tests probe operation without moving axes. Detects the specified number of taps before ending. If no tap is detected within the timeout period, the command fails.
+Tests probe operation without moving axes. Detects the specified number of taps before ending. If no tap is detected within the timeout period, the command fails. The command validates tap quality and logs validation errors to the console.
 
 **Note:** Load cell probes do not support `QUERY_ENDSTOPS` or `QUERY_PROBE`, they always return not triggered. Use `LOAD_CELL_TEST_TAP` to verify functionality before probing.
 
@@ -236,7 +239,7 @@ PROBE HOME=Z
 
 Keep nozzle temperature below the filament oozing point during homing and probing. 140°C is a good starting point for all filament types.
 
-Filament ooze is the primary source of probing error. Kalico does not detect poor quality taps caused by ooze, and modules like `quad_gantry_level` will repeatedly probe fouled locations. Probing at printing temperatures is not recommended.
+Filament ooze is the primary source of probing error. Kalico validates tap quality and rejects many bad taps (e.g., due to ooze), retrying per `samples_tolerance_retries`. However, prevention is still best—probing at printing temperatures is not recommended. Watch the console for tap validation errors (e.g., `TAP_SHAPE_INVALID`, `TAP_BREAK_CONTACT_TOO_LATE`) which indicate poor tap quality.
 
 ### Nozzle Protection
 
@@ -296,6 +299,18 @@ horizontal_z_clearance: 0.4
 ```
 Using `horizontal_z_clearance`, the probe always retracts by that amount between mesh points. This can greatly reduce the z travel distance while adapting to the bed shape. Less travel distance speeds up probing.
 
+**Use NOZZLE_CLEANUP before meshing**
+```
+NOZZLE_CLEANUP
+```
+This taps the nozzle until it reports 3 successful probes in a row, proving that the nozzle is clean. This clears the nozzle of any ooze just before meshing for best mesh quality. This should be performed outside the print area. See [NOZZLE_CLEANUP](G-Codes.md#nozzle_cleanup)
+
+**Use the CIRCLE strategy for meshing**
+```
+BED_MESH STRATEGY=CIRCLE
+```
+The circle strategy is a feature of `[probe]`. When the load cell probe detects a fouled probe it will move to an adjacent location in a circle pattern. For bed mesh this slight position offset is far less critical than using a fouled probe. Re-probing into a fouled location is unlikely to succeed and can cause the meshing operation to fail.
+
 ## Advanced Configuration
 
 ### Continuous Tare Filtering
@@ -324,13 +339,83 @@ Basic tuning guidelines:
 - Keep `trigger_force` low (default 75 g); the drift filter maintains internal readings near zero
 - Keep `force_safety_limit` conservative (default 2 kg) during tuning
 - Keep `drift_safety_limit` conservative (default 1 kg) during tuning
+- **Note:** Over-aggressive `drift_filter_cutoff_frequency` can distort tap shape and timing, triggering validation failures (e.g., `TAP_BREAK_CONTACT_TOO_LATE`). Reduce cutoff frequency or probing speed if such errors appear.
 
 Tuning of the other filter parameters is beyond the scope of this documentation. 
 A Jupyter notebook is provided in [scripts/filter_workbench.ipynb](../scripts/filter_workbench.ipynb) with an example of a detailed analysis.
 
+### Tap Validation
+
+**Introduction to Tap Probing**
+
+Load cell probe works differently than other probes, it "taps" on the build surface. After the probe makes contact with the build surface it makes a small move back away from the build surface, called the pullback move. This combination of down/up motions is called a "tap". The complete tap sequence is analyzed and a representation is built from the raw force data. This representation is a series of points connected by lines. This is a plot of a typical tap with the movement phases clearly marked:
+
+![Valid tap showing probe, dwell, and pullback phases][fig-tap-phases]
+
+[fig-tap-phases]: img/load-cell/tap-phases.png
+
+*Figure 1 — Valid tap phases. The graph shows measured force (black line) over time with fitted validation lines (red). Three phases are color-coded: Probe (blue) where force rises as the nozzle contacts the bed, Dwell (green) where force stabilizes after trigger, and Pullback (red) where force returns to baseline as the pullback move lifts the nozzle. Vertical lines mark phase boundaries: blue (probe end/dwell start), green (dwell end/pullback start), red (pullback end). An ideal tap shows a sharp rise during probe, stable force during dwell, and clean return to baseline during pullback.*
+
+Each line in the plot has a name:
+
+![Tap segments labeled on real force data][fig-tap-segments]
+
+[fig-tap-segments]: img/load-cell/tap-segments.png
+
+*Figure 1a — Tap plot showing the named tap lines: Approach (flat baseline before contact), Compression (steep rise as force builds), Dwell (stable high force while probe settles), Decompression (force drop during pullback), and Departure (return to baseline as pullback finishes). Vertical colored lines mark the boundaries between phases.*
+
+The intersection of the Decompression line and the Departure line is reported as the Z=0 point by the probe. This is the most critical point on the graph.
+
+The pullback move is very small (0.2mm) and very slow. Because of its slow speed the slope of the decompression line is more shallow than the compression line. This improves the probes accuracy because the force changes less over time, meaning the z resolution of the probe is increased. Essentially the pullback move is a high resolution force scan of the bed at one point. The pullback move is controlled by the `pullback_speed` and `pullback_dist` options in the config. The default settings scan at 1 ADC sample per micron, giving the probe an expected resolution of 1 micron.
+
+Based on the shape of the plot it is possible to tell if the probe is good or not. The probe performs some basic checks on the order of the points and the shape formed by the lines. If it isn't "tap" shaped the probe is reported as not good. See [Tap validation error codes](#tap-validation-error-codes) for details on validation failures.
+
+#### TK Some use for this diagram
+
+![Tap validation angles on real force data][fig-tap-angles]
+
+[fig-tap-angles]: img/load-cell/tap-angles.png
+
+*Figure 1b — Tap validation angles. The SimpleTapClassifier validates four interior angles between adjacent phases: Compression Start Angle (purple, between approach and compression), Compression End Angle (blue, between compression and dwell), Decompression Start Angle (orange, between dwell and decompression), and Decompression End Angle (green, between decompression and departure). These angles characterize tap geometry and can detect anomalies like slow collisions (shallow angles) or adhesion issues (distorted angles).*
+
+#### Tap Validation Error Codes
+
+When a bad quality tap is detected a specific error code is logged. Most of these errors can be a symptom of nozzle fouling but some can indicate a configuration or setup issue:
+
+| Error Code                    | Description                                                              | Common Causes                                                                                                         |
+|-------------------------------|--------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| `TAP_CHRONOLOGY`              | The 4 points on the tap graphs are out of order in time                  | Fouling: the data is so distorted that it doesnt look like a tap                                                      |
+| `TAP_SHAPE_INVALID`           | One of the segments of the tap shape doesnt go in the expected direction | Fouling: the data is so distorted that it doesnt look like a tap                                                      |
+| `TAP_BREAK_CONTACT_TOO_EARLY` | Break-contact detected too early in the pullback move                    | The `pullback_distance` is too long.                                                                                  |
+| `TAP_BREAK_CONTACT_TOO_LATE`  | Break-contact is detected too late in the pullback move                  | The `pullback_distance` was too short.                                                                                |
+| `TAP_PULLBACK_TOO_SHORT`      | The nozzle never broke contact with the bed during the pullback move     | The `pullback_distance` is too short.                                                                                 |
+| `COASTING_MOVE_ACCELERATION`  | The probing move started to decelerate before the probe triggered        | Z is not configured with a negative `min_position` so the probe continues to move past z=0. e.g.: `position_min: -5`. |
+| `TOO_FEW_PROBING_MOVES`       | Fewer trapezoidal moves than expected                                    | This is uncommon                                                                                                      |
+| `TOO_MANY_PROBING_MOVES`      | More trapezoidal moves than expected                                     | This is uncommon                                                                                                      |
+
+All validation errors are logged for troubleshooting.
+
 ## Developer Notes
 
 This section covers guidance for developing toolhead boards with load cell probe support.
+
+### Tap Analysis and Validation
+
+The load cell probe performs a full tap analysis on each probe attempt. Samples are analyzed to identify tap points and construct lines representing the approach, compression, dwell, decompression, and departure phases. The points are identified using an exhaustive elbow finding algorithm and the lines are constructed with linear regression. Then the intersections of those lines are calculated resulting in a set of points.
+
+See [Figures 2](#) and [Figure 3](#)
+
+Next a basic set of sanity checks are performed:
+
+1. **Motion chronology**: The points are checked to make sure they are in order chronologically. It is possible they could be out of order because they are based ont he force data, linear regression and intersections.
+
+2. **Shape validation**: The points are checked to make sure they from a "tap" shaped plot. This can be either a positive or negative trapezoidal shape.
+
+3. **Break-contact timing**: The probe validates that break contact time occurs within the middle two thirds of the pullback move. Too early or too late make the analysis less reliable.
+
+If any of these checks fail the probe is marked as bad. If they all pass the configured `TapClassifierModule` is invoked to further decide if the tap is good of bad.
+
+**Custom tap classifiers**: A `TapClassifierModule` can be configured via the `tap_classifier_module` configuration value. The classifier receives the `TapAnalysis` object and can perform additional validation or modify the tap position calculation. With an appropriate data set it is possible to use Machine Learning techniques (e.g. [Decision Trees](https://scikit-learn.org/stable/modules/tree.html)) to build a more accurate tap classifier that is tailored to a specific printer's hardware.
 
 ### ADC Sensor Selection
 

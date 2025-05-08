@@ -17,11 +17,10 @@ from klippy.gcode import GCodeCommand
 from . import sos_filter
 from .interfaces import LoadCellSensor
 from .load_cell import (
-    ApiClientHelper,
     LoadCell,
     LoadCellSampleCollector,
 )
-from .tap_analysis import TapAnalysis
+from .tap_analysis import TapAnalysisHelper, TapClassifierModule
 
 # constants for fixed point numbers
 Q2_INT_BITS = 2
@@ -745,12 +744,15 @@ class TappingMove:
         self,
         config: ConfigWrapper,
         load_cell_primitives: LoadCellPrimitives,
+        tap_analysis_helper: TapAnalysisHelper,
         config_helper: LoadCellProbeConfigHelper,
     ):
         self._printer = config.get_printer()
         self._load_cell_primitives = load_cell_primitives
+        self._tap_analysis_helper = tap_analysis_helper
         self._config_helper = config_helper
         # track results of the last tap
+        self._last_analysis = None
         self._last_result = None
         self._is_last_result_valid = False
         # wrappers for MCU_endstop use for probing. tap() overrides the
@@ -760,13 +762,6 @@ class TappingMove:
         self.get_steppers = load_cell_primitives.get_steppers
         self.home_wait = load_cell_primitives.home_wait
         self.query_endstop = load_cell_primitives.query_endstop
-        # webhooks support
-        self._clients = ApiClientHelper(self._printer)
-        name = config.get_name()
-        header = {"header": ["probe_tap_event"]}
-        self._clients.add_mux_endpoint(
-            "load_cell_probe/dump_taps", "load_cell_probe", name, header
-        )
 
     def home_start(
         self, print_time, sample_time, sample_count, rest_time, triggered=True
@@ -796,11 +791,16 @@ class TappingMove:
         # collect samples from the tap
         results = collector.collect_until(pullback_end_time)
         samples = check_sensor_errors(results, self._printer)
+        trigger_force = self._config_helper.get_trigger_force_grams(gcmd)
         # Analyze the tap data
-        ppa = TapAnalysis(samples)
-        # broadcast tap event data:
-        self._clients.send({"tap": ppa.to_dict()})
-        self._is_last_result_valid = True
+        tap_analysis = self._tap_analysis_helper.analyze(
+            samples, trigger_force, gcmd
+        )
+        self._last_analysis = tap_analysis
+        self._is_last_result_valid = tap_analysis.is_valid()
+        # if the tap is valid, replace the z position with the calculated one
+        if self._is_last_result_valid:
+            epos[2] = tap_analysis.get_tap_pos()[2]
         return epos, self._is_last_result_valid
 
     def get_status(self, eventtime):
@@ -947,10 +947,19 @@ class LoadCellEndstopWrapper:
 
 
 class LoadCellPrinterProbe:
-    def __init__(self, config: ConfigWrapper, sensor: LoadCellSensor):
+    def __init__(
+        self,
+        config: ConfigWrapper,
+        sensor: LoadCellSensor,
+        tap_classifier: TapClassifierModule,
+    ):
         self._printer = config.get_printer()
         self._load_cell = LoadCell(config, sensor)
         # Read all user configuration and build modules
+        name = config.get_name()
+        self._tap_analysis_helper = TapAnalysisHelper(
+            self._printer, name, tap_classifier
+        )
         config_helper = LoadCellProbeConfigHelper(config, self._load_cell)
         self._mcu = self._load_cell.get_sensor().get_mcu()
         trigger_dispatch = mcu.TriggerDispatch(self._mcu)
@@ -973,7 +982,10 @@ class LoadCellPrinterProbe:
         )
         homing_move = HomingMove(config, load_cell_primitives)
         self._tapping_move = TappingMove(
-            config, load_cell_primitives, config_helper
+            config,
+            load_cell_primitives,
+            self._tap_analysis_helper,
+            config_helper,
         )
         # printer integration
         LoadCellProbeCommands(config, load_cell_primitives)

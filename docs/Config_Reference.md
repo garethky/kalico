@@ -6022,6 +6022,10 @@ sensor_type:
 #pullback_speed:
 #   The speed in mm/s for the pullback move after probe trigger. Valid range is
 #   0.1 to 1.0 mm/s. The default is set to 1 micron (0.001mm) per sensor sample.
+#tap_classifier_module:
+#   Optional module for custom tap validation. When not specified, the default
+#   TapQualityClassifier is used. Setting a custom classifier overrides the default
+#   validation logic.
 #z_offset:
 #speed:
 #samples:
