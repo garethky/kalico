@@ -634,6 +634,17 @@ class ProbePointsHelper:
         self.results.append(kin_pos)
         self._manual_probe_start()
 
+# TODO: remove in kalico
+class ProbeVirtualEndstopDeprecation:
+    def __init__(self, config):
+        self._name = config.get_name()
+        self._printer = config.get_printer()
+        # Register z_virtual_endstop pin
+        self._printer.lookup_object('pins').register_chip('probe', self)
+    def setup_pin(self, pin_type, pin_params):
+        raise self._printer.config_error(
+            "Module [%s] does not support `probe:z_virtual_endstop`"
+            ", use a pin instead." % (self._name,))
 
 def load_config(config):
     return PrinterProbe(config, ProbeEndstopWrapper(config))
