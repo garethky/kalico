@@ -790,11 +790,16 @@ class TappingMove:
         pullback_end_time = self.pullback_move(gcmd)
         # collect samples from the tap
         results = collector.collect_until(pullback_end_time)
+        # calculate how long we waited to get the data
+        t_end = self._printer.get_reactor().monotonic()
+        t_end = self.get_mcu().estimated_print_time(t_end)
+        collection_time = t_end - pullback_end_time
+        # check for data errors
         samples = check_sensor_errors(results, self._printer)
         trigger_force = self._config_helper.get_trigger_force_grams(gcmd)
         # Analyze the tap data
         tap_analysis = self._tap_analysis_helper.analyze(
-            samples, trigger_force, gcmd
+            samples, trigger_force, collection_time, gcmd
         )
         self._last_analysis = tap_analysis
         self._is_last_result_valid = tap_analysis.is_valid()
