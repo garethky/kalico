@@ -627,7 +627,11 @@ class LoadCellPrimitives:
         printer_homing: homing.PrinterHoming = self._printer.lookup_object(
             "homing"
         )
-        return printer_homing.probing_move(mcu_probe, pos, speed), collector
+        try:
+            return printer_homing.probing_move(mcu_probe, pos, speed), collector
+        except self._printer.command_error:
+            collector.stop_collecting()
+            raise
 
     # Wait for the MCU to trigger with no movement
     def probing_test(self, gcmd, timeout):
