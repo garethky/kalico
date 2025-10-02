@@ -895,6 +895,9 @@ class LoadCellProbeConfigHelper:
         # most probes don't move horizontally, but this one does
         self._retry_speed = floatParamHelper(config, 'retry_speed',
             above=0.1, default=50.)
+        self._sample_retract_distance = floatParamHelper(config,
+            'sample_retract_distance', above=0.0, default = 2.0)
+        self._lift_speed = floatParamHelper(config, 'lift_speed', above=0.0)
 
     def get_tare_samples(self, gcmd=None):
         tare_time = self._tare_time_param.get(gcmd)
@@ -921,6 +924,12 @@ class LoadCellProbeConfigHelper:
 
     def get_retry_speed(self, gcmd=None):
         return self._retry_speed.get(gcmd)
+
+    def get_sample_retract_distance(self, gcmd=None):
+        return self._sample_retract_distance.get(gcmd)
+
+    def get_lift_speed(self, gcmd=None):
+        return self._lift_speed.get(gcmd)
 
     def get_rest_time(self):
         return self._rest_time
@@ -1055,21 +1064,25 @@ class LoadCellProbingMove:
                                          "waiting for sensor data"
     }
 
-    def __init__(self, config, mcu_load_cell_probe, param_helper,
+    def __init__(self, config, mcu_load_cell_probe,
             continuous_tare_filter_helper, config_helper):
         self._printer = config.get_printer()
         self._mcu_load_cell_probe = mcu_load_cell_probe
-        self._param_helper = param_helper
         self._continuous_tare_filter_helper = continuous_tare_filter_helper
         self._config_helper = config_helper
         self._mcu = mcu_load_cell_probe.get_mcu()
         self._load_cell = mcu_load_cell_probe.get_load_cell()
-        self._z_min_position = probe.lookup_minimum_z(config)
         self._dispatch = mcu_load_cell_probe.get_dispatch()
-        probe.LookupZSteppers(config, self._dispatch.add_stepper)
         # internal state tracking
         self._tare_counts = 0
         self._last_trigger_time = 0
+
+    # Accessor methods for LoadCellEndstopWrapper
+    def get_mcu(self):
+        return self._mcu
+
+    def get_dispatch(self):
+        return self._dispatch
 
     def _start_collector(self):
         toolhead = self._printer.lookup_object('toolhead')
@@ -1122,7 +1135,7 @@ class LoadCellProbingMove:
         return self._dispatch.get_steppers()
 
     # Probe towards z_min until the load_cell_probe on the MCU triggers
-    def probing_move(self, gcmd):
+    def probing_move(self, pos, speed, gcmd):
         # do not permit probing if the load cell is not calibrated
         if not self._load_cell.is_calibrated():
             raise self._printer.command_error("Load Cell not calibrated")
@@ -1130,15 +1143,14 @@ class LoadCellProbingMove:
         self._pause_and_tare(gcmd)
         # get params for the homing move
         toolhead = self._printer.lookup_object('toolhead')
-        pos = toolhead.get_position()
-        pos[2] = self._z_min_position
-        speed = self._param_helper.get_probe_params(gcmd)['probe_speed']
+        probe_pos = toolhead.get_position()
+        probe_pos[2] = pos[2]
         phoming = self._printer.lookup_object('homing')
         # start collector after tare samples are consumed
         collector = self._start_collector()
         # do homing move
         try:
-            return phoming.probing_move(self, pos, speed), collector
+            return phoming.probing_move(self, probe_pos, speed), collector
         except self._printer.command_error:
             collector.stop_collecting()
             raise
@@ -1184,9 +1196,10 @@ class TappingMove:
         return pullback_end
 
     # perform a probing move and a pullback move
-    def run_tap(self, gcmd):
+    def run_tap(self, pos, speed, gcmd):
         # do the probing/homing move
-        epos, collector = self._load_cell_probing_move.probing_move(gcmd)
+        epos, collector = self._load_cell_probing_move.probing_move(pos,
+            speed, gcmd)
         # do the pullback move
         pullback_end_time = self.pullback_move(gcmd)
         # collect samples from the tap
@@ -1246,6 +1259,128 @@ class ProbeActivationHelper:
                 "Toolhead moved during probe deactivate_gcode script")
 
 
+# Thin wrapper that bridges Kalico's probe interface to load cell components
+class LoadCellEndstopWrapper:
+    """
+    Thin wrapper that bridges Kalico's probe interface to load cell components.
+
+    This class:
+    - Implements MCU endstop interface for homing integration
+    - Implements Kalico's ProbeEndstopWrapper interface (probing_move, etc.)
+    - Delegates all actual work to existing TapSession and LoadCellProbingMove
+    - Manages multi-probe lifecycle by calling TapSession methods
+
+    Size: ~120 lines - just a bridge, no business logic!
+    """
+
+    def __init__(self, config, load_cell_probing_move, tap_session):
+        """
+        Initialize the wrapper.
+
+        Args:
+            config: Configuration object
+            load_cell_probing_move: LoadCellProbingMove instance (for MCU interface)
+            tap_session: TapSession instance (for retry logic)
+        """
+        self._printer = config.get_printer()
+        self._load_cell_probing_move = load_cell_probing_move
+        self._tap_session = tap_session
+
+        # Get references from load_cell_probing_move
+        self._mcu = load_cell_probing_move.get_mcu()
+        self._dispatch = load_cell_probing_move.get_dispatch()
+
+        # Probe configuration
+        self._z_offset = config.getfloat('z_offset')
+
+        # Register for MCU identification to add Z steppers
+        self._printer.register_event_handler('klippy:mcu_identify',
+                                            self._handle_mcu_identify)
+
+    def _handle_mcu_identify(self):
+        """Add Z steppers to dispatch on MCU identification"""
+        kin = self._printer.lookup_object('toolhead').get_kinematics()
+        for stepper in kin.get_steppers():
+            if stepper.is_active_axis('z'):
+                self.add_stepper(stepper)
+
+    # ========================================================================
+    # MCU Endstop Interface - Delegate to LoadCellProbingMove
+    # ========================================================================
+
+    def get_mcu(self):
+        return self._mcu
+
+    def add_stepper(self, stepper):
+        self._dispatch.add_stepper(stepper)
+
+    def get_steppers(self):
+        return self._dispatch.get_steppers()
+
+    def home_start(self, print_time, sample_time, sample_count, rest_time,
+                   triggered=True):
+        """Start homing - delegate to LoadCellProbingMove"""
+        return self._load_cell_probing_move.home_start(
+            print_time, sample_time, sample_count, rest_time, triggered)
+
+    def home_wait(self, home_end_time):
+        """Wait for homing completion - delegate to LoadCellProbingMove"""
+        return self._load_cell_probing_move.home_wait(home_end_time)
+
+    def query_endstop(self, print_time):
+        """Query endstop state - not applicable for load cell"""
+        return False
+
+    # ========================================================================
+    # Kalico ProbeEndstopWrapper Interface - Delegate to TapSession
+    # ========================================================================
+
+    def get_position_endstop(self):
+        """Return z_offset for this probe"""
+        return self._z_offset
+
+    def probe_prepare(self, hmove):
+        """Called before homing move - no-op for nozzle probe"""
+        pass
+
+    def probe_finish(self, hmove):
+        """Called after homing move - no-op for nozzle probe"""
+        pass
+
+    def multi_probe_begin(self):
+        """Start multi-probe session - delegate to TapSession"""
+        self._tap_session.start_probe_session(None)
+
+    def multi_probe_end(self):
+        """End multi-probe session - delegate to TapSession"""
+        self._tap_session.end_probe_session()
+
+    def probing_move(self, pos, speed, gcmd=None):
+        """
+        Execute probing move with retry logic.
+
+        This is called by Kalico's PrinterProbe.run_probe() for each sample.
+        We delegate to TapSession which handles all the retry logic.
+
+        Args:
+            pos: Target position [x, y, z, e]
+            speed: Probing speed
+            gcmd: GCode command object (for parameters)
+
+        Returns:
+            Final corrected position [x, y, z, e]
+        """
+        # TapSession.run_probe() handles retry logic and adds result internally
+        self._tap_session.run_probe(pos, speed, gcmd)
+
+        # Pull the result from TapSession
+        results = self._tap_session.pull_probed_results()
+        if not results:
+            raise self._printer.command_error("No probe result from tap session")
+
+        return results[0]  # Return the single probed position
+
+
 # build a table of x,y locations around a zero point to tap at
 # distance_step is the radius increase for each ring and the minimum distance
 # between probes. 2 rings are used.
@@ -1295,24 +1430,30 @@ class TapLocation:
 
 # ProbeSession that implements Tap and retry logic
 class TapSession:
-    def __init__(self, config, tapping_move, probe_params_helper,
-            nozzle_cleaner, config_helper):
+    def __init__(self, config, tapping_move, config_helper,
+            nozzle_cleaner):
         self._printer = config.get_printer()
         self._tapping_move = tapping_move
-        self._probe_params_helper = probe_params_helper
         self._nozzle_cleaner_module = nozzle_cleaner
         self._config_helper = config_helper
         self._activator = ProbeActivationHelper(config)
         # Session state
         self._results = []
         self._locations = {}
+        self._session_active = False  # Track session state for Kalico
 
     def start_probe_session(self, gcmd):
-        self._activator.activate_probe()
+        """Start a probe session (called by LoadCellEndstopWrapper.multi_probe_begin)"""
+        if not self._session_active:
+            self._activator.activate_probe()
+            self._session_active = True
         return self
 
     def end_probe_session(self):
-        self._activator.deactivate_probe()
+        """End a probe session (called by LoadCellEndstopWrapper.multi_probe_end)"""
+        if self._session_active:
+            self._activator.deactivate_probe()
+            self._session_active = False
         self._results = []
         self._locations = {}
 
@@ -1368,10 +1509,24 @@ class TapSession:
             '. Retrying.' if will_retry else '')
         )
 
+    def _get_probe_params(self, gcmd=None):
+        """Get probe parameters from gcmd or use config defaults"""
+        sample_retract_dist = self._config_helper.get_sample_retract_dist(gcmd)
+        lift_speed = self._config_helper.get_lift_speed(gcmd)
+        return {
+            'sample_retract_dist': sample_retract_dist,
+            'lift_speed': lift_speed
+        }
+
     # probe until a single good sample is returned or retries are exhausted
-    def run_probe(self, gcmd):
+    def run_probe(self, pos, speed, gcmd):
+        # Ensure session is active (should have been started by multi_probe_begin)
+        if not self._session_active:
+            raise self._printer.command_error(
+                "Probe session not active - internal error")
+
         toolhead = self._printer.lookup_object('toolhead')
-        params = self._probe_params_helper.get_probe_params(gcmd)
+        params = self._get_probe_params(gcmd)
         strategy = self._config_helper.get_bad_tap_strategy(gcmd)
         retries = self._config_helper.get_bad_tap_retries(gcmd)
         location = self._get_location(retries, toolhead)
@@ -1386,7 +1541,7 @@ class TapSession:
             # for the circular strategy, move the probe to the probing location
             if strategy == STRATEGY_CIRCLE:
                 self._horizontal_move(location, gcmd, toolhead)
-            epos, is_good = self._tapping_move.run_tap(gcmd)
+            epos, is_good = self._tapping_move.run_tap(pos, speed, gcmd)
             tap_analysis = self._tapping_move.get_last_analysis()
             tap_error = tap_analysis.get_validation_error()
             if strategy == STRATEGY_FAIL and not is_good:
@@ -1530,26 +1685,32 @@ class LoadCellPrinterProbe:
         trigger_dispatch = mcu.TriggerDispatch(self._mcu)
         continuous_tare_filter_helper = ContinuousTareFilterHelper(config,
             sensor, trigger_dispatch.get_command_queue())
-        # Probe Interface
-        self._param_helper = probe.ProbeParameterHelper(config)
-        self._cmd_helper = probe.ProbeCommandHelper(config, self)
-        self._probe_offsets = probe.ProbeOffsetsHelper(config)
+
+        # Create MCU load cell probe
         self._mcu_load_cell_probe = McuLoadCellProbe(config, self._load_cell,
             continuous_tare_filter_helper.get_sos_filter(), config_helper,
             trigger_dispatch)
+
+        # Create load cell probing components
         load_cell_probing_move = LoadCellProbingMove(config,
-            self._mcu_load_cell_probe, self._param_helper,
+            self._mcu_load_cell_probe,
             continuous_tare_filter_helper, config_helper)
+
         self._tapping_move = TappingMove(config, self._mcu,
             load_cell_probing_move, self._tap_analysis_helper, config_helper)
-        tap_session = TapSession(config, self._tapping_move, self._param_helper,
-            nozzle_cleaner, config_helper)
-        self._probe_session = probe.ProbeSessionHelper(config,
-            self._param_helper, tap_session.start_probe_session)
-        # printer integration
+
+        tap_session = TapSession(config, self._tapping_move, config_helper,
+            nozzle_cleaner)
+
+        # Create thin wrapper to bridge to Kalico's probe
+        wrapper = LoadCellEndstopWrapper(config, load_cell_probing_move,
+                                        tap_session)
+
+        # Use Kalico's standard PrinterProbe
+        self._printer.add_object('probe', probe.PrinterProbe(config, wrapper))
+
+        # Commands (can still use tap_session and load_cell_probing_move)
         LoadCellProbeCommands(config, load_cell_probing_move, tap_session)
-        probe.ProbeVirtualEndstopDeprecation(config)
-        self._printer.add_object('probe', self)
 
     def _lookup_object(self, config, key, default):
         config_section_name = config.get(key, default=None)
@@ -1560,21 +1721,6 @@ class LoadCellPrinterProbe:
     # get internal tap events
     def add_client(self, callback):
         self._tap_analysis_helper.add_client(callback)
-
-    def get_probe_params(self, gcmd=None):
-        return self._param_helper.get_probe_params(gcmd)
-
-    def get_offsets(self):
-        return self._probe_offsets.get_offsets()
-
-    def start_probe_session(self, gcmd):
-        return self._probe_session.start_probe_session(gcmd)
-
-    def get_status(self, eventtime):
-        status = self._cmd_helper.get_status(eventtime)
-        status.update(self._load_cell.get_status(eventtime))
-        status.update(self._tapping_move.get_status(eventtime))
-        return status
 
 
 def load_config(config):
