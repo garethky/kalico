@@ -2528,6 +2528,33 @@ z_offset:
 #   0 will disable scrubbing. The default is 0.
 ```
 
+### [nozzle_cleanup]
+
+Enables the [NOZZLE_CLEANUP](G-Codes.md#nozzle_cleanup) gcode command. This 
+performs a nozzle cleaning routine that probes over a grid pattern to
+remove ooze from the nozzle. To work correctly your probe needs to support probe
+quality detection, such as the [load_cell_probe](#load_cell_probe).
+```
+#samples: 3
+#   Number of consecutive good probes required at one location to succeed.
+#   Default is 3.
+#stepover: 2.0
+#   The spacing (in mm) between probe locations in the grid. Default is 2mm.
+#pattern_x: 10
+#   Number of probe locations along the X axis. Can be negative. Default is 10.
+#pattern_y: 4
+#   Number of probe locations along the Y axis. Can be negative. Default is 4.
+#
+#These config values are inherited from [probe] if not specified:
+#speed:
+#lift_speed:
+#retry_speed:
+#sample_retract_dist:
+#nozzle_scrubber_gcode:
+#scrubbing_frequency:
+```
+
+
 ### [bltouch]
 
 BLTouch probe. One may define this section (instead of a probe
