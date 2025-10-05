@@ -1332,6 +1332,28 @@ babystepping), and subtract if from the probe's z_offset.  This acts
 to take a frequently used babystepping value, and "make it permanent".
 Requires a `SAVE_CONFIG` to take effect.
 
+### [nozzle_cleanup]
+The following command is available when a
+[nozzle_cleanup config section](Config_Reference.md#nozzle_cleanup)
+is enabled.
+
+#### NOZZLE_CLEANUP
+`NOZZLE_CLEANUP [SAMPLES=<count>] [PATTERN_STEP=<mm>] [PATTERN_X=<count>]
+[PATTERN_Y=<count>] [SPEED=<mm/s>] [LIFT_SPEED=<mm/s>] [RETRY_SPEED=<mm/s>]
+[SAMPLE_RETRACT_DIST=<mm>] [SCRUBBING_FREQUENCY=<count>]`: ⚠️
+Perform a nozzle cleaning routine that probes over a grid pattern to
+remove ooze from the nozzle. This is useful for nozzle-based probes
+that don't have scrubbing hardware. Running this right before bed mesh can cut
+down on bad probes encountered during the mesh and keep ooze out of your first
+layer. The command tries each location until one of them gives the specified
+number of consecutive good probes. When a bad probe is detected it moves to the next location.
+
+If you have configured nozzle scrubbing on your `[probe]` then this works here
+as well. This allows mixing tapping with nozzle scrubbing to clean up the nozzle
+in fewer taps.
+
+To use the command position the toolhead where you want to start the cleanup. E.g. near the edge of the print area. `PATTERN_X` and `PATTERN_Y` control the shape of the grid. Positive values extend the grid along the positive direction of the axis, negative values do the reverse. E.g. if you position the toolhead near the front left corner of the print area, and you want to keep the cleanup mess out of the print are, you should use `PATTERN_Y=-4` to extend the pattern towards the front of the bed, away from the print area.
+
 ### [probe_eddy_current]
 
 The following commands are available when a
