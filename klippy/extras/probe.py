@@ -269,6 +269,10 @@ class PrinterProbe:
         self.was_last_result_good = False
         self.gcode_move = self.printer.load_object(config, "gcode_move")
         self.retry_session = RetrySession(config)
+        self.template = self.retry_session.retry_policy.template
+        self.scrubbing_frequency = (
+            self.retry_session.retry_policy.scrubbing_frequency
+        )
         # Infer Z position to move to during a probe
         if config.has_section("stepper_z"):
             zconfig = config.getsection("stepper_z")
