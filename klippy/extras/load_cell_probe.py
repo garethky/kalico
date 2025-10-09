@@ -772,6 +772,61 @@ class LoadCellProbeCommands:
         gcmd.respond_info("Test complete, %s taps detected" % (taps,))
 
 
+# Probe `activate_gcode` and `deactivate_gcode` support
+class ProbeActivationHelper:
+    def __init__(self, config: configfile.ConfigWrapper):
+        self._printer = config.get_printer()
+        gcode_macro = self._printer.load_object(config, "gcode_macro")
+        self._activate_gcode = gcode_macro.load_template(
+            config, "activate_gcode", ""
+        )
+        self._deactivate_gcode = gcode_macro.load_template(
+            config, "deactivate_gcode", ""
+        )
+        self._is_multi = False
+        self._is_active = False
+
+    def multi_probe_begin(self):
+        self._is_multi = True
+        self.activate_probe()
+
+    def multi_probe_end(self):
+        self._is_multi = False
+        self.deactivate_probe()
+
+    def probe_prepare(self, hmove):
+        self.activate_probe()
+
+    def probe_finish(self, hmove):
+        # only deactivate on probe if not doing a multi-probe
+        if not self._is_multi:
+            self.deactivate_probe()
+
+    def activate_probe(self):
+        if self._is_active:
+            return
+        self._is_active = True
+        toolhead = self._printer.lookup_object("toolhead")
+        start_pos = toolhead.get_position()
+        self._activate_gcode.run_gcode_from_command()
+        if toolhead.get_position()[:3] != start_pos[:3]:
+            raise self._printer.command_error(
+                "Toolhead moved during probe activate_gcode script"
+            )
+
+    def deactivate_probe(self):
+        if not self._is_active:
+            return
+        self._is_active = False
+        toolhead = self._printer.lookup_object("toolhead")
+        start_pos = toolhead.get_position()
+        self._deactivate_gcode.run_gcode_from_command()
+        if toolhead.get_position()[:3] != start_pos[:3]:
+            raise self._printer.command_error(
+                "Toolhead moved during probe deactivate_gcode script"
+            )
+
+
 class LoadCellEndstopWrapper:
     def __init__(
         self,
@@ -796,6 +851,11 @@ class LoadCellEndstopWrapper:
         self.query_endstop = homing_move.query_endstop
         # wrappers for probe ProbeEndstopWrapper interface
         self.probing_move = tapping_move.probing_move
+        self._probe_activation_helper = ProbeActivationHelper(config)
+        self.probe_prepare = self._probe_activation_helper.probe_prepare
+        self.probe_finish = self._probe_activation_helper.probe_finish
+        self.multi_probe_begin = self._probe_activation_helper.multi_probe_begin
+        self.multi_probe_end = self._probe_activation_helper.multi_probe_end
 
     def _handle_mcu_identify(self):
         kin = self._printer.lookup_object("toolhead").get_kinematics()
@@ -804,18 +864,6 @@ class LoadCellEndstopWrapper:
                 self.add_stepper(stepper)
 
     # Interface for ProbeEndstopWrapper
-    def multi_probe_begin(self):
-        pass
-
-    def multi_probe_end(self):
-        pass
-
-    def probe_prepare(self, hmove):
-        pass
-
-    def probe_finish(self, hmove):
-        pass
-
     def get_position_endstop(self):
         return self._z_offset
 
