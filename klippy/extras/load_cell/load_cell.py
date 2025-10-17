@@ -6,7 +6,7 @@
 
 from . import hx71x
 from . import ads1220
-from .bulk_sensor import BatchWebhooksClient
+from extras.bulk_sensor import BatchWebhooksClient
 import collections
 
 # We want either Python 3's zip() or Python 2's izip() but NOT 2's zip():
