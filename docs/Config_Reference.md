@@ -1273,6 +1273,11 @@ Visual Examples:
 #horizontal_move_z: 5
 #   The height (in mm) that the head should be commanded to move to
 #   just prior to starting a probe operation. The default is 5.
+#horizontal_z_clearance:
+#   A relative height (in mm) that the toolhead will lift at each mesh
+#   point before moving to the next one. If enabled, the `horizontal_move_z`
+#   value is only used for the travel move to the first mesh point. The default
+#   is None.
 #mesh_radius:
 #   Defines the radius of the mesh to probe for round beds. Note that
 #   the radius is relative to the coordinate specified by the
