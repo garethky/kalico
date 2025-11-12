@@ -19,6 +19,9 @@ from .load_cell import ApiClientHelper
 
 
 class TapClassifierModule(object):
+    def calibrate(self, taps: list[TapAnalysis], gcmd: Optional[GCodeCommand]):
+        pass
+
     def classify(self, tap_analysis: TapAnalysis, gcmd: Optional[GCodeCommand]):
         pass
 
