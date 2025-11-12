@@ -6045,9 +6045,10 @@ sensor_type:
 #   The average angle of the decompression line for clean taps. The futher the
 #   measured decompression angle is from this angle, the worse its tap quality score.
 #   There is no default, this must be measured. It is a number in degrees
-#   between 0 and 90.
+#   between 0 and 90. Can be automatically calibrated using
+#   `LOAD_CELL_PROBE_CALIBRATE CALIBRATION=DECOMPRESSION_ANGLE`.
+#   See [Decompression Angle Calibration](Load_Cell.md#decompression-angle-calibration).
 #max_approach_force_pct: 0.5
-
 #max_departure_force_pct: 0.25
 #max_baseline_force_delta_pct: 0.25
 #max_dwell_force_drop_pct: 0.75
