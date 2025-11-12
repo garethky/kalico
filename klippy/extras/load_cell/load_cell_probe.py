@@ -1261,6 +1261,7 @@ class PullbackDistanceCalibration:
             self._bed_mesh_config = config.getsection("bed_mesh")
         self._calibrating = False
         self._gcmd: Optional[GCodeCommand] = None
+        self._taps: list[TapAnalysis] = []
         self._distances: list[float] = []
         self._forces: list[float] = []
 
@@ -1282,10 +1283,12 @@ class PullbackDistanceCalibration:
     def _tap_callback(self, tap: TapAnalysis):
         if not self._calibrating or isinstance(tap, dict):
             return self._calibrating
+        self._taps.append(tap)
         decomp_dist, decomp_force = self._decompression_distance(tap)
         if math.isnan(decomp_dist):
-            # TODO: consider if we want to allow this...
-            return self._calibrating
+            raise self._gcmd.error(
+                "Tap pullback distance could not be measured"
+            )
         self._distances.append(decomp_dist)
         self._forces.append(decomp_force)
         self._gcmd.respond_info(
@@ -1299,7 +1302,10 @@ class PullbackDistanceCalibration:
 
     def calibrate(self, gcmd: GCodeCommand):
         self._gcmd = gcmd
-        gcmd.respond_info("Starting pullback_distance calibration...")
+        self._taps = []
+        self._distances = []
+        self._forces = []
+        gcmd.respond_info("Optimizing pullback_distance...")
         bed_mesh: BedMesh = self._printer.lookup_object(
             "bed_mesh", default=None
         )
@@ -1311,12 +1317,10 @@ class PullbackDistanceCalibration:
             "PULLBACK_DISTANCE", default=1.0, minval=0.5, maxval=2.0
         )
         self._config_helper.set_pullback_distance(pullback_distance)
-        self._calibrating: bool = True
-        self._register_tap_callback(self._tap_callback)
-        self._distances = []
-        self._forces = []
 
         try:
+            self._calibrating: bool = True
+            self._register_tap_callback(self._tap_callback)
             points = bed_mesh.generate_points(
                 gcmd, "pullback_distance_calibrate"
             )
@@ -1355,6 +1359,7 @@ class PullbackDistanceCalibration:
             "The SAVE_CONFIG command will update the printer config file "
             "with the above and restart the printer."
         )
+        return self._taps
 
 
 class LoadCellPrinterProbe:
@@ -1367,6 +1372,7 @@ class LoadCellPrinterProbe:
         self._config = config
         self._printer = config.get_printer()
         self._load_cell = LoadCell(config, sensor)
+        self._tap_classifier = tap_classifier
         # Read all user configuration and build modules
         name = config.get_name()
         self._tap_analysis_helper = TapAnalysisHelper(
@@ -1443,8 +1449,13 @@ class LoadCellPrinterProbe:
         calibration: str = gcmd.get("CALIBRATION")
         if calibration == "DRIFT_FILTER":
             self._drift_filter_calibration.calibrate(gcmd)
-        elif calibration == "PULLBACK_DISTANCE":
-            self._pullback_distance_calibration.calibrate(gcmd)
+        elif calibration == "TAP_PERFORMANCE":
+            taps = self._pullback_distance_calibration.calibrate(gcmd)
+            self._tap_classifier.calibrate(taps, gcmd)
+        elif not calibration:
+            raise gcmd.error(
+                "CALIBRATION must be one of DRIFT_FILTER or TAP_PERFORMANCE"
+            )
         else:
             raise gcmd.error(f"Unknown CALIBRATION value '{calibration}'")
 
