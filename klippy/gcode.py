@@ -138,6 +138,9 @@ class GCodeCommand:
             below=below,
         )
 
+    def delay(self, soak_time):
+        pass
+
 
 # Parse and dispatch G-Code commands
 class GCodeDispatch:
