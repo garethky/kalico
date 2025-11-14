@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import math
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import numpy as np
 
@@ -14,7 +14,7 @@ from klippy import mcu
 from klippy.configfile import ConfigWrapper, PrinterConfig
 from klippy.extras.bed_mesh import BedMesh
 from klippy.extras.homing import PrinterHoming
-from klippy.extras.probe import PrinterProbe
+from klippy.extras.probe import PrinterProbe, ProbePointsHelper
 from klippy.gcode import GCodeCommand, GCodeDispatch
 from klippy.printer import Printer
 from klippy.toolhead import ToolHead
@@ -25,7 +25,7 @@ from .load_cell import (
     LoadCell,
     LoadCellSampleCollector,
 )
-from .tap_analysis import TapAnalysisHelper, TapClassifierModule
+from .tap_analysis import TapAnalysis, TapAnalysisHelper, TapClassifierModule
 
 # constants for fixed point numbers
 Q2_INT_BITS = 2
@@ -419,6 +419,13 @@ class LoadCellProbeConfigHelper:
 
     def is_pullback_move_disabled(self) -> bool:
         return self._disable_pullback_move
+
+    def set_pullback_distance(self, value):
+        self._pullback_distance_param.set(value)
+
+    def save_pullback_distance(self, value):
+        self._pullback_distance_param.set(value)
+        self._pullback_distance_param.save()
 
     def get_rest_time(self) -> float:
         return self._rest_time
@@ -1185,6 +1192,103 @@ class DriftFilterCalibration:
         return math.nan
 
 
+class PullbackDistanceCalibration:
+    def __init__(
+        self,
+        config: ConfigWrapper,
+        config_helper: LoadCellProbeConfigHelper,
+        register_tap_callback: Callable,
+    ):
+        self._config = config
+        self._config_helper = config_helper
+        self._register_tap_callback = register_tap_callback
+        self._printer = config.get_printer()
+        self._bed_mesh_config = None
+        if config.has_section("bed_mesh"):
+            self._bed_mesh_config = config.getsection("bed_mesh")
+        self._calibrating = False
+        self._gcmd: Optional[GCodeCommand] = None
+        self._distances: list[float] = []
+
+    @staticmethod
+    def _decompression_distance(tap: TapAnalysis):
+        if not tap.is_valid():
+            return math.nan
+
+        tap_points = tap.get_tap_points()
+        decompression_start_z = tap.get_toolhead_position(tap_points[3].time)[2]
+        break_contact_z = tap.get_toolhead_position(tap_points[4].time)[2]
+        return abs(decompression_start_z - break_contact_z)
+
+    def _tap_callback(self, tap: TapAnalysis):
+        if isinstance(tap, dict):
+            self._gcmd.respond_info("got a dict!")
+            return self._calibrating
+        if self._calibrating:
+            self._distances.append(self._decompression_distance(tap))
+            self._gcmd.respond_info(
+                f"Decompression distance: {self._distances[-1]:.3}mm"
+            )
+        return self._calibrating
+
+    def _finalize_callback(self, probe_offsets, results):
+        pass
+
+    def calibrate(self, gcmd: GCodeCommand):
+        self._gcmd = gcmd
+        gcmd.respond_info("Starting pullback_distance calibration...")
+        bed_mesh: BedMesh = self._printer.lookup_object(
+            "bed_mesh", default=None
+        )
+        if bed_mesh is None:
+            raise gcmd.error("bed_mesh not configured")
+
+        original_pullback_distance = self._config_helper.get_pullback_distance()
+        pullback_distance = gcmd.get_float(
+            "PULLBACK_DISTANCE", default=1.0, minval=0.5, maxval=2.0
+        )
+        self._config_helper.set_pullback_distance(pullback_distance)
+        self._calibrating = True
+        self._register_tap_callback(self._tap_callback)
+        self._distances = []
+
+        try:
+            points = bed_mesh.generate_points(
+                gcmd, "pullback_distance_calibrate"
+            )
+            points_helper = ProbePointsHelper(
+                self._bed_mesh_config,
+                self._finalize_callback,
+                points,
+                use_offsets=True,
+                enable_horizontal_z_clearance=True,
+            )
+            points_helper.start_probe(gcmd)
+        finally:
+            self._calibrating = False
+            # restore state in case of an error
+            self._config_helper.set_pullback_distance(
+                original_pullback_distance
+            )
+
+        min_distance = min(self._distances)
+        max_distance = max(self._distances)
+        mean_distance = float(np.mean(self._distances))
+        distance_std = float(np.std(self._distances))
+        pullback_distance = (mean_distance + (3.0 * distance_std)) * 2.0
+
+        self._config_helper.save_pullback_distance(pullback_distance)
+        gcmd.respond_info(
+            f"Decompression Distance: mean={mean_distance:.4f}mm, "
+            f"min={min_distance:.4f}mm, max={max_distance:.4f}mm, "
+            f"std={distance_std:.4f}mm\n"
+            f"pullback_distance={pullback_distance:.4f}\n"
+            "This has been saved for the current session.\n"
+            "The SAVE_CONFIG command will update the printer config file "
+            "with the above and restart the printer."
+        )
+
+
 class LoadCellPrinterProbe:
     def __init__(
         self,
@@ -1200,7 +1304,7 @@ class LoadCellPrinterProbe:
         self._tap_analysis_helper = TapAnalysisHelper(
             self._printer, name, tap_classifier
         )
-        config_helper = LoadCellProbeConfigHelper(config, self._load_cell)
+        self._config_helper = LoadCellProbeConfigHelper(config, self._load_cell)
         self._mcu = self._load_cell.get_sensor().get_mcu()
         trigger_dispatch = mcu.TriggerDispatch(self._mcu)
         continuous_tare_filter_helper = ContinuousTareFilterHelper(
@@ -1211,21 +1315,21 @@ class LoadCellPrinterProbe:
             config,
             self._load_cell,
             continuous_tare_filter_helper.get_sos_filter(),
-            config_helper,
+            self._config_helper,
             trigger_dispatch,
         )
         self._load_cell_primitives = LoadCellPrimitives(
             config,
             self._mcu_load_cell_probe,
             continuous_tare_filter_helper,
-            config_helper,
+            self._config_helper,
         )
         homing_move = HomingMove(config, self._load_cell_primitives)
         self._tapping_move = TappingMove(
             config,
             self._load_cell_primitives,
             self._tap_analysis_helper,
-            config_helper,
+            self._config_helper,
         )
         # printer integration
         LoadCellProbeCommands(config, self._load_cell_primitives)
@@ -1240,6 +1344,9 @@ class LoadCellPrinterProbe:
             continuous_tare_filter_helper,
             self._load_cell_primitives.tare,
             self._load_cell,
+        )
+        self._pullback_distance_calibration = PullbackDistanceCalibration(
+            config, self._config_helper, self._tap_analysis_helper.add_callback
         )
         self._register_macros()
 
@@ -1257,6 +1364,8 @@ class LoadCellPrinterProbe:
         calibration: str = gcmd.get("CALIBRATION")
         if calibration == "DRIFT_FILTER":
             self._drift_filter_calibration.calibrate(gcmd)
+        elif calibration == "PULLBACK_DISTANCE":
+            self._pullback_distance_calibration.calibrate(gcmd)
         else:
             gcmd.error(f"Unknown CALIBRATION value '{calibration}'")
 
