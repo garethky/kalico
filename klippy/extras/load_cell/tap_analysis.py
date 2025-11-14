@@ -669,6 +669,7 @@ class TapAnalysisHelper:
     def __init__(self, printer, name, tap_classifier):
         self._printer = printer
         self._tap_classifier = tap_classifier
+        self._callbacks = []
         # webhooks support
         self._clients = ApiClientHelper(printer)
         header = {"header": ["probe_tap_event"]}
@@ -695,6 +696,10 @@ class TapAnalysisHelper:
         tap_analysis.set_collection_time(collection_time)
         # broadcast tap event data:
         self._clients.send({"tap": tap_analysis.to_dict()})
+        for callback in self._callbacks:
+            result = callback(tap_analysis)
+            if not result:
+                self._callbacks.remove(callback)
         self._log_errors(tap_analysis)
         return tap_analysis
 
@@ -711,3 +716,6 @@ class TapAnalysisHelper:
     # get internal tap events
     def add_client(self, callback):
         self._clients.add_client(callback)
+
+    def add_callback(self, callback):
+        self._callbacks.append(callback)

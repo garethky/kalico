@@ -1084,6 +1084,7 @@ probe a bed mesh and save results for the current session (use `SAVE_CONFIG` to 
 
 Available calibration types:
 - `DRIFT_FILTER`: Calibrate drift_filter_cutoff_frequency
+- `PULLBACK_DISTANCE`: Calibrate pullback_distance
 
 All calibrations accept [BED_MESH_CALIBRATE](#bed_mesh_calibrate) parameters for 
 controlling mesh point generation (PROFILE, MESH_MIN, MESH_MAX, PROBE_COUNT, ALGORITHM, etc.).
@@ -1114,8 +1115,20 @@ bowden tube movement, keeping the signal centered on zero.
 - **CUTOFF_INCREMENT**: Step size in Hz when searching for optimal frequency. The 
   default is 0.1.
 
-See [Drift Filter Calibration](Load_Cell.md#drift-filter-calibration) for interpretation 
-and troubleshooting.
+See [Drift Filter Calibration](Load_Cell.md#drift-filter-calibration)
+
+#### PULLBACK_DISTANCE Calibration  
+`LOAD_CELL_PROBE_CALIBRATE CALIBRATION=PULLBACK_DISTANCE [PULLBACK_DISTANCE=<dist>]
+[<bed_mesh_parameters>]`
+
+Optimizes the `pullback_distance` parameter by measuring actual decompression distances during 
+normal probing across the bed. Computes a safe minimum using statistical analysis:
+`(mean + 3σ) × 2.0`.
+
+- **PULLBACK_DISTANCE**: Temporary pullback distance in mm to use during calibration 
+  testing. The default is 1.0 (valid range: 0.5-2.0).
+
+See [Pullback Distance Calibration](Load_Cell.md#pullback-distance-calibration)
 
 ### [manual_probe]
 
