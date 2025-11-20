@@ -34,9 +34,9 @@ class TrapezoidalMove:
     y_r: float
     z_r: float
 
-    def __init__(self, move):
+    def __init__(self, move, time_offset=0.0):
         # copy c data to python memory
-        self.print_time = float(move.print_time)
+        self.print_time = float(move.print_time) - time_offset
         self.move_t = float(move.move_t)
         self.start_v = float(move.start_v)
         self.accel = float(move.accel)
@@ -169,8 +169,13 @@ class ForceGraph:
 
         denom = n * sum_xx - sum_x * sum_x
         if abs(denom) < 1e-10:
-            return None, np.inf
-
+            # replicate Numpy behaviour for all x values being equal
+            mean_y = sum_y / n
+            slope = 0.0
+            intercept = mean_y
+            # RSS is just variance in y
+            rss = sum_yy - n * mean_y * mean_y
+            return [slope, intercept], max(0.0, rss)
         slope = (n * sum_xy - sum_x * sum_y) / denom
         intercept = (sum_y - slope * sum_x) / n
         rss = (
@@ -382,7 +387,8 @@ class TapAnalysis:
         self._homing_start_index: int = 0
         self._pullback_end_index: int = -1
         nd_samples = np.asarray(samples, dtype=np.float64)
-        self._time = nd_samples[:, 0]
+        self._time_offset = float(nd_samples[0, 0])
+        self._time = nd_samples[:, 0] - self._time_offset
         self._force = nd_samples[:, 1]
         self._force_graph = ForceGraph(self._time, self._force)
         self._trigger_force = trigger_force
@@ -446,10 +452,11 @@ class TapAnalysis:
     def _extract_trapq(self, printer):
         trapq = printer.lookup_object("motion_report").trapqs["toolhead"]
         moves, _ = trapq.extract_trapq(
-            float(self._time[0]), float(self._time[-1])
+            float(self._time[0] + self._time_offset),
+            float(self._time[-1] + self._time_offset),
         )
         for move in moves:
-            self._moves.append(TrapezoidalMove(move))
+            self._moves.append(TrapezoidalMove(move, self._time_offset))
             # DEBUG: enable to see trapq contents
             # logging.info("trapq move: %s" % (moves_out[-1].to_dict(),))
 
@@ -639,10 +646,10 @@ class TapAnalysis:
     # convert to dictionary for JSON encoder
     def to_dict(self):
         return {
-            "time": self._time.tolist(),
+            "time": self.get_time(),
             "force": self._force.tolist(),
-            "tap_points": [point.to_dict() for point in self._tap_points],
-            "tap_lines": [line.to_dict() for line in self._tap_lines],
+            "tap_points": [point.to_dict() for point in self.get_tap_points()],
+            "tap_lines": [line.to_dict() for line in self.get_tap_lines()],
             "tap_angles": self.get_tap_angles(),
             "tap_pos": self.get_tap_pos(),
             "moves": [move.to_dict() for move in self._moves],
