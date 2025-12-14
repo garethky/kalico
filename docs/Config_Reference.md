@@ -6013,6 +6013,11 @@ sensor_type:
 #   The time in seconds used for taring the load_cell before each probe. The
 #   default value is: 5 / 50 = 0.1. This collects samples from 5 cycles of
 #   50Hz / 6 cycles of 60Hz mains power to cancel power line noise.
+#disable_pullback_move: False
+#   When True, disables the pullback move and tap analysis after probe trigger.
+#   The probe will use the raw trigger position instead of the calculated Z=0
+#   from tap analysis. This reduces probe accuracy but may be useful for
+#   troubleshooting or compatibility testing. The default is False.
 #pullback_distance: 0.2
 #   The distance in mm to slowly raise the probe to perform precise Z=0
 #   measurments. This move occurs immediately after the probe detects contact.
