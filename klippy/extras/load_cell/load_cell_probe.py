@@ -361,6 +361,9 @@ class LoadCellProbeConfigHelper:
             config, "force_safety_limit", minval=100, maxval=5000, default=2000
         )
         # pullback move
+        self._disable_pullback_move = config.getboolean(
+            "disable_pullback_move", False
+        )
         self._pullback_distance_param = floatParamHelper(
             config, "pullback_distance", minval=0.01, maxval=2.0, default=0.2
         )
@@ -389,6 +392,9 @@ class LoadCellProbeConfigHelper:
 
     def get_pullback_distance(self, gcmd=None):
         return self._pullback_distance_param.get(gcmd)
+
+    def is_pullback_move_disabled(self):
+        return self._disable_pullback_move
 
     def get_rest_time(self):
         return self._rest_time
@@ -741,6 +747,11 @@ class TappingMove:
         epos, collector = self._load_cell_primitives.probing_move(
             self, pos, speed, gcmd
         )
+        # when pullback is disabled, skip the pullback move and tap analysis
+        if self._config_helper.is_pullback_move_disabled():
+            collector.stop_collecting()
+            self._is_last_result_valid = True
+            return epos, self._is_last_result_valid
         # do the pullback move
         pullback_end_time = self.pullback_move(gcmd)
         # collect samples from the tap
