@@ -91,7 +91,7 @@ class HX71xBase(LoadCellSensor):
                 self.sps_bits,
                 self.gain_channel,
                 self.dout_pin,
-                self.sclk_pin
+                self.sclk_pin,
             )
         )
         mcu.add_config_cmd(
