@@ -183,7 +183,6 @@ class TapQualityClassifier(TapClassifierModule):
                 )
 
         qualities = self._recalculate_tap_qualities()
-        self._tap_analyses = []
         mean_quality = float(np.mean(qualities))
         std_quality = float(np.std(qualities))
         gcmd.respond_info(
