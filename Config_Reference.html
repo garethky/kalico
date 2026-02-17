@@ -1478,6 +1478,24 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#mpc-ambient-sensor" class="md-nav__link">
+    <span class="md-ellipsis">
+      MPC Ambient Sensor
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mpc-block-sensor" class="md-nav__link">
+    <span class="md-ellipsis">
+      MPC Block Sensor
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1644,6 +1662,15 @@
   <a href="#output_pin" class="md-nav__link">
     <span class="md-ellipsis">
       [output_pin]
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#static_pwm_clock" class="md-nav__link">
+    <span class="md-ellipsis">
+      [static_pwm_clock]
     </span>
   </a>
   
@@ -4802,6 +4829,24 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#mpc-ambient-sensor" class="md-nav__link">
+    <span class="md-ellipsis">
+      MPC Ambient Sensor
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mpc-block-sensor" class="md-nav__link">
+    <span class="md-ellipsis">
+      MPC Block Sensor
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4968,6 +5013,15 @@
   <a href="#output_pin" class="md-nav__link">
     <span class="md-ellipsis">
       [output_pin]
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#static_pwm_clock" class="md-nav__link">
+    <span class="md-ellipsis">
+      [static_pwm_clock]
     </span>
   </a>
   
@@ -5599,7 +5653,7 @@ serial:
 #is_non_critical: False
 #   Setting this to True will allow the mcu to be disconnected and
 #   reconnected at will without errors. Helpful for USB-accelerometer boards
-#   and USB-probes
+#   and USB/CAN-probes
 </code></pre></div>
 
 <h3 id="mcu-my_extra_mcu">[mcu my_extra_mcu]<a class="headerlink" href="#mcu-my_extra_mcu" title="Permanent link">&para;</a></h3>
@@ -5658,7 +5712,7 @@ pins such as "extra_mcu:ar9" may then be used elsewhere in the config
 # Logging options:
 
 #minimal_logging: False
-#   Set all log parameters log options to False. The default is False.
+#   Set the default for all log options. The default is False.
 #log_statistics: True
 #   If statistics should be logged
 #   (helpful for keeping the log clean during development)
@@ -5709,6 +5763,7 @@ run_current: ${tmc5160 stepper_x.run_current}
 #   Nested references work, but are not advised
 </code></pre></div>
 
+<p>If needed, references may be escaped as <code>\${such}</code></p>
 <h2 id="common-kinematic-settings">Common kinematic settings<a class="headerlink" href="#common-kinematic-settings" title="Permanent link">&para;</a></h2>
 <h3 id="printer">[printer]<a class="headerlink" href="#printer" title="Permanent link">&para;</a></h3>
 <p>The printer section controls high level printer settings.</p>
@@ -6542,11 +6597,11 @@ sensor_pin:
 #   be smoothed to reduce the impact of measurement noise. The default
 #   is 1 seconds.
 control:
-#   Control algorithm (either pid, pid_v, watermark or mpc). This parameter must
-#   be provided. pid_v should only be used on well calibrated heaters with
-#   low to moderate noise.
+#   Control algorithm (either pid, pid_v, dual_loop_pid, watermark or mpc).
+#   This parameter must be provided. pid_v should only be used on well
+#   calibrated heaters with low to moderate noise.
 #
-#   If control: pid or pid_v
+#   If control: pid, pid_v or dual_loop_pid
 #pid_Kp:
 #pid_Ki:
 #pid_Kd:
@@ -6598,6 +6653,31 @@ per_move_pressure_advance: False
 #   If true, uses pressure advance constant from trapq when processing moves
 #   This causes changes to pressure advance be taken into account immediately,
 #   for all moves in the current queue, rather than ~250ms later once the queue gets flushed
+#
+#   If: control: dual_loop_pid
+#inner_sensor_name:
+#   The temperature_sensor name of a second sensor to use for temperature
+#   control with &#39;dual_loop_pid&#39;. This sensor will limit the heater power
+#   to not allow the temperature to exceed the &#39;inner_max_temp&#39; value.
+#
+#   If: control: dual_loop_pid
+#inner_max_temp:
+#   The maximum temperature target that the inner sensor will allow.
+#
+#   If control: dual_loop_pid
+#inner_pid_Kp:
+#inner_pid_Ki:
+#inner_pid_Kd:
+#   &#39;dual_loop_pid&#39; control uses two PID loops to control the temperature.
+#   The inner(secondary) PID loop controls the temperature directly. The
+#   primary PID loop controls the power to the secondary PID loop. This
+#   allows the primary PID loop to be tuned for temperature control, while
+#   the secondary PID loop can be tuned for power control, not exceeding
+#   the temperature limit set on &#39;inner_max_temp&#39;.
+#   The primary sensor is positioned close where the temperature
+#   measurament should be more accurate (e.g. on the bed surface). The
+#   secondary sensor is positioned where the temperature measurament
+#   should not exceed a limit (e.g. on the silicone heater).
 </code></pre></div>
 
 <h3 id="heater_bed">[heater_bed]<a class="headerlink" href="#heater_bed" title="Permanent link">&para;</a></h3>
@@ -6939,6 +7019,9 @@ extended <a href="G-Codes.html#z_tilt">G-Code command</a> becomes available.</p>
 #   By default, the first Z movement to reach `horizontal_move_z` uses `speed`.
 #   Set `enforce_lift_speed` to True to enforce the `lift_speed`.
 #   The default is False.
+#use_adjustments: False
+#   If set to true it uses the behaviour described by trails here:
+#   https://github.com/Trails5000/klipper/commit/47b5a91f96761961e693031fa514a0025a877117
 </code></pre></div>
 
 <h4 id="z_tilt_ng">[z_tilt_ng]<a class="headerlink" href="#z_tilt_ng" title="Permanent link">&para;</a></h4>
@@ -7004,6 +7087,9 @@ commands become available, enhancing bed leveling accuracy and calibration effic
 #   values yield better results, but can also lead to situations where the
 #   bed is tilted in a way that the nozzle touched the bed before the probe.
 #   The default is conservative.
+#use_adjustments: False
+#   If set to true it uses the behaviour described by trails here:
+#   https://github.com/Trails5000/klipper/commit/47b5a91f96761961e693031fa514a0025a877117
 </code></pre></div>
 
 <h3 id="quad_gantry_level">[quad_gantry_level]<a class="headerlink" href="#quad_gantry_level" title="Permanent link">&para;</a></h3>
@@ -7088,7 +7174,9 @@ the nature of skew correction these lengths are set via gcode. See
 <p>Temperature-dependant toolhead Z position adjustment. Compensate for vertical
 toolhead movement caused by thermal expansion of the printer's frame in
 real-time using a temperature sensor (typically coupled to a vertical section
-of frame).</p>
+of frame). Multiple sections may be defined as [z_thermal_adjust component] to
+compensate for thermal expansion in different printer components, such as the
+hotend, heatbreak and frame.</p>
 <p>See also: <a href="G-Codes.html#z_thermal_adjust">extended g-code commands</a>.</p>
 <div class="highlight"><pre><span></span><code>[z_thermal_adjust]
 #temp_coeff:
@@ -7257,6 +7345,10 @@ gcode:
 #   useful for initialization procedures or a repeating delayed_gcode.
 #   If set to 0 the delayed_gcode will not execute on startup.
 #   Default is 0.
+#description: Update the duration of a delayed_gcode
+#   This will add a short description used at the HELP command or while
+#   using the auto completion feature. Default &quot;Update the duration of 
+#   a delayed_gcode&quot;
 </code></pre></div>
 
 <h3 id="save_variables">[save_variables]<a class="headerlink" href="#save_variables" title="Permanent link">&para;</a></h3>
@@ -7768,6 +7860,36 @@ z_offset:
 #   Set to `True` will probe one extra time and remove the first
 #   sample from calculation. This can improve probe accuracy for
 #   printers that have an outlier first sample.
+#⚠️ bad_probe_strategy: RETRY
+#   Strategy to apply when a probe attempt is considered &quot;bad&quot; based on
+#   the probe&#39;s quality detection logic. If the probe doesnt support 
+#   quality detection all probes are assumed to be good.
+#   One of: fail, ignore, retry or circle.
+#   - fail: Stop immediately with an error on first bad probe.
+#   - ignore: Accept all probes regardless of quality.
+#   - retry: Re-attempt the probe at the same location.
+#   - circle: Re-attempt the probe using a circular offset pattern to
+#     avoid fouling.
+#   The default is retry.
+#⚠️ bad_probe_retries: 6
+#   Number of additional probe attempts to make when a bad probe
+#   is detected, according to &#39;bad_probe_strategy&#39;. Set to 0 to disable
+#   retries. The default is 6.
+#⚠️ retry_speed:
+#   Probe horizontal movement speed (in mm/s) to use when moving the probe
+#   for a retry. If not specified, the default value is the value of &#39;speed&#39;.
+#⚠️ nozzle_scrubber_gcode:
+#   A block of G-Code to perform a custom nozzle scrubbing routine. This
+#   G-code may be invoked between PROBE retries and by the NOZZLE_CLEANUP
+#   command. The gcode template receives the following parameters:
+#   - ATTEMPT: The current retry attempt number
+#   - RETRIES: The maximum number of retries configured
+#   - X, Y: The current toolhead position
+#⚠️ scrubbing_frequency: 0
+#   Controls how often the nozzle scrubber is used in response to bad probes.
+#   If set to a positive number, N, the nozzle_scrubber_gcode will be invoked
+#   after every Nth bad probe. 1 will run the scrubber after every bad probe.
+#   0 will disable scrubbing. The default is 0.
 </code></pre></div>
 
 <h3 id="bltouch">[bltouch]<a class="headerlink" href="#bltouch" title="Permanent link">&para;</a></h3>
@@ -8060,6 +8182,35 @@ calibrate_x: ...
 #   This should be the X coordinate that positions the nozzle during the
 #   calibration process for Y axis twist compensation. This parameter must be
 #   provided and is recommended to be near the center of the bed.
+
+# The following parameters are automatically saved by SAVE_CONFIG after
+# running AXIS_TWIST_COMPENSATION_CALIBRATE and typically should not be
+# manually modified. Note: if z_compensations is set, compensation_start_x
+# and compensation_end_x must also be set. Similarly, zy_compensations
+# requires compensation_start_y and compensation_end_y.
+#z_compensations:
+#   A comma-separated list of Z offset compensation values for X-axis twist.
+#   These represent Z adjustments at evenly-spaced points from
+#   compensation_start_x to compensation_end_x. Generated automatically
+#   during X-axis calibration. Requires compensation_start_x and
+#   compensation_end_x to be set. The default is an empty list.
+#compensation_start_x:
+#   The starting X coordinate for X-axis twist compensation.
+#   Set automatically during calibration. The default is unset.
+#compensation_end_x:
+#   The ending X coordinate for X-axis twist compensation.
+#   Set automatically during calibration. The default is unset.
+#zy_compensations:
+#   A comma-separated list of Z offset compensation values for Y-axis twist.
+#   Similar to z_compensations but for the Y axis. Generated automatically
+#   during Y-axis calibration (AXIS=Y). Requires compensation_start_y and
+#   compensation_end_y to be set. The default is an empty list.
+#compensation_start_y:
+#   The starting Y coordinate for Y-axis twist compensation.
+#   Set automatically during Y-axis calibration. The default is unset.
+#compensation_end_y:
+#   The ending Y coordinate for Y-axis twist compensation.
+#   Set automatically during Y-axis calibration. The default is unset.
 </code></pre></div>
 
 <h3 id="z_calibration">⚠️ [z_calibration]<a class="headerlink" href="#z_calibration" title="Permanent link">&para;</a></h3>
@@ -8717,14 +8868,46 @@ sensors. This sensor can be used with extruders, heater_generic and heater beds.
 <div class="highlight"><pre><span></span><code>sensor_type: temperature_combined
 #sensor_list:
 #   Must be provided. List of sensors to combine to new &quot;virtual&quot;
-#   sensor.
-#   E.g. &#39;temperature_sensor sensor1,extruder,heater_bed&#39;
+#   sensor. Each entry should be the full name of a temperature-
+#   reporting object as it appears in the config (e.g. &#39;extruder&#39;,
+#   &#39;heater_bed&#39;, or &#39;temperature_sensor &lt;name&gt;&#39; for custom sensors).
+#   E.g. &#39;temperature_sensor sensor1, temperature_sensor sensor2&#39;
+#   E.g. &#39;extruder, heater_bed&#39;
+#   E.g. &#39;temperature_sensor chamber, extruder, heater_bed&#39;
 #combination_method:
 #   Must be provided. Combination method used for the sensor.
 #   Available options are &#39;max&#39;, &#39;min&#39;, &#39;mean&#39;.
 #maximum_deviation:
 #   Must be provided. Maximum permissible deviation between the sensors
 #   to combine (e.g. 5 degrees). To disable it, use a large value (e.g. 999.9)
+</code></pre></div>
+
+<h3 id="mpc-ambient-sensor">MPC Ambient Sensor<a class="headerlink" href="#mpc-ambient-sensor" title="Permanent link">&para;</a></h3>
+<p>Virtual MPC sensor to show the internal ambient temperature value (defaults to 25 if any other algorithm than MPC is used)</p>
+<div class="highlight"><pre><span></span><code>sensor_type: mpc_ambient_temperature
+heater_name: extruder
+#   Put the name of the heater this sensor is tied to (this parameter is required)
+#gcode_id: AT
+min_temp: 0
+max_temp: 325
+#ignore_limits: False
+#   Ignore the temp limits (if set to true, the min and max temp can be omitted)
+#echo_limits_to_console: False
+#   If set to true, limits will be echoed to console instead of just being ignored if ignore_limits is true
+</code></pre></div>
+
+<h3 id="mpc-block-sensor">MPC Block Sensor<a class="headerlink" href="#mpc-block-sensor" title="Permanent link">&para;</a></h3>
+<p>Virtual MPC sensor to show the internal ambient temperature value (defaults to 25 if any other algorithm than MPC is used)</p>
+<div class="highlight"><pre><span></span><code>sensor_type: mpc_block_temperature
+heater_name: extruder
+#   Put the name of the heater this sensor is tied to (this parameter is required)
+#gcode_id: BE
+min_temp: 0
+max_temp: 325
+#ignore_limits: False
+#   Ignore the temp limits (if set to true, the min and max temp can be omitted)
+#echo_limits_to_console: False
+#   If set to true, limits will be echoed to console instead of just being ignored if ignore_limits is true
 </code></pre></div>
 
 <h2 id="fans">Fans<a class="headerlink" href="#fans" title="Permanent link">&para;</a></h2>
@@ -9111,11 +9294,6 @@ clock_pin:
 #i2c_speed:
 #   See the &quot;common I2C settings&quot; section for a description of the
 #   above parameters.
-#scl_pin:
-#sda_pin:
-#   Alternatively, if the pca9632 is not connected to a hardware I2C
-#   bus, then one may specify the &quot;clock&quot; (scl_pin) and &quot;data&quot;
-#   (sda_pin) pins. The default is to use hardware I2C.
 #color_order: RGBW
 #   Set the pixel order of the LED (using a string containing the
 #   letters R, G, B, W). The default is RGBW.
@@ -9178,6 +9356,10 @@ pin:
 #   A list of G-Code commands to execute when the button is released.
 #   G-Code templates are supported. The default is to not run any
 #   commands on a button release.
+#debounce_delay:
+#   A period of time in seconds to debounce events prior to running the
+#   button gcode. If the button is pressed and released during this
+#   delay, the entire button press is ignored. Default is 0.
 </code></pre></div>
 
 <h3 id="output_pin">[output_pin]<a class="headerlink" href="#output_pin" title="Permanent link">&para;</a></h3>
@@ -9223,6 +9405,18 @@ pin:
 #maximum_mcu_duration:
 #static_value:
 #   These options are deprecated and should no longer be specified.
+</code></pre></div>
+
+<h3 id="static_pwm_clock">[static_pwm_clock]<a class="headerlink" href="#static_pwm_clock" title="Permanent link">&para;</a></h3>
+<p>Static configurable output pin (one may define any number of
+sections with an "static_pwm_clock" prefix).
+Pins configured here will be set up as clock output pins.
+Generally used to provide clock input to other hardware on the board.</p>
+<div class="highlight"><pre><span></span><code>[static_pwm_clock my_pin]
+pin:
+#   The pin to configure as an output. This parameter must be provided.
+#frequency: 100
+#   Target output frequency.
 </code></pre></div>
 
 <h3 id="pwm_tool">[pwm_tool]<a class="headerlink" href="#pwm_tool" title="Permanent link">&para;</a></h3>
@@ -9389,12 +9583,20 @@ sense_resistor:
 #driver_TOFF: 4
 #driver_HEND: 7
 #driver_HSTRT: 0
+#driver_VHIGHFS: 0
+#driver_VHIGHCHM: 0
 #driver_PWM_AUTOSCALE: True
 #driver_PWM_FREQ: 1
 #driver_PWM_GRAD: 4
 #driver_PWM_AMPL: 128
 #driver_FREEWHEEL: 0
 #driver_SGT: 0
+#driver_SEMIN: 0
+#driver_SEUP: 0
+#driver_SEMAX: 0
+#driver_SEDN: 0
+#driver_SEIMIN: 0
+#driver_SFILT: 0
 #   Set the given register during the configuration of the TMC2130
 #   chip. This may be used to set custom motor parameters. The
 #   defaults for each parameter are next to the parameter name in the
@@ -9524,6 +9726,11 @@ sense_resistor:
 #driver_PWM_OFS: 36
 #driver_FREEWHEEL: 0
 #driver_SGTHRS: 0
+#driver_SEMIN: 0
+#driver_SEUP: 0
+#driver_SEMAX: 0
+#driver_SEDN: 0
+#driver_SEIMIN: 0
 #   Set the given register during the configuration of the TMC2209
 #   chip. This may be used to set custom motor parameters. The
 #   defaults for each parameter are next to the parameter name in the
@@ -9746,10 +9953,11 @@ run_current:
 #driver_PWM_REG: 4
 #driver_PWM_LIM: 12
 #driver_SLOPE_CONTROL: 0
-#   The chip has a default value of 0, corresponding to 100V/µs.
-#   Setting this value to 2, corresponding to 400V/µs, approximately
-#   matches the TMC2209. This lowers the power dissipation at a 50kHz
-#   chopper frequency by around 1W.
+#   Controls the slew rate of the gate driver output. The chip default is 0,
+#   corresponding to 100V/µs. Setting to 2 (400V/µs) or 3 (570V/µs) can
+#   significantly reduce driver temperature (users report ~15-20°C reduction
+#   at 50kHz chopper frequency). A value of 2 matches TMC2209 slew rate.
+#   Higher values may increase EMI. See TMC2240 datasheet for details.
 #driver_SGT: 0
 #driver_SEMIN: 0
 #driver_SEUP: 0
@@ -10034,14 +10242,19 @@ prefix).</p>
 </code></pre></div>
 
 <h3 id="mcp4018">[mcp4018]<a class="headerlink" href="#mcp4018" title="Permanent link">&para;</a></h3>
-<p>Statically configured MCP4018 digipot connected via two gpio "bit
-banging" pins (one may define any number of sections with an "mcp4018"
-prefix).</p>
+<p>Statically configured MCP4018 digipot connected via i2c (one may
+define any number of sections with an "mcp4018" prefix).</p>
 <div class="highlight"><pre><span></span><code>[mcp4018 my_digipot]
-scl_pin:
-#   The SCL &quot;clock&quot; pin. This parameter must be provided.
-sda_pin:
-#   The SDA &quot;data&quot; pin. This parameter must be provided.
+#i2c_address: 47
+#   The i2c address that the chip is using on the i2c bus. The default
+#   is 47.
+#i2c_mcu:
+#i2c_bus:
+#i2c_software_scl_pin:
+#i2c_software_sda_pin:
+#i2c_speed:
+#   See the &quot;common I2C settings&quot; section for a description of the
+#   above parameters.
 wiper:
 #   The value to statically set the given MCP4018 &quot;wiper&quot; to. This is
 #   typically set to a number between 0.0 and 1.0 with 1.0 being the
@@ -10546,6 +10759,11 @@ more information.</p>
 #   dispatch and execution of the runout_gcode. It may be useful to
 #   increase this delay if OctoPrint exhibits strange pause behavior.
 #   Default is 0.5 seconds.
+#debounce_delay:
+#   A period of time in seconds to debounce events prior to running the
+#   switch gcode. The switch must he held in a single state for at least
+#   this long to activate. If the switch is toggled on/off during this delay,
+#   the event is ignored. Default is 0.
 #switch_pin:
 #   The pin on which the switch is connected. This parameter must be
 #   provided.

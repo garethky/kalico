@@ -843,6 +843,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#control_mpc" class="md-nav__link">
+    <span class="md-ellipsis">
+      control_mpc
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#display_status" class="md-nav__link">
     <span class="md-ellipsis">
       display_status
@@ -2618,6 +2627,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#control_mpc" class="md-nav__link">
+    <span class="md-ellipsis">
+      control_mpc
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#display_status" class="md-nav__link">
     <span class="md-ellipsis">
       display_status
@@ -3167,6 +3185,16 @@ mcu is configured to use canbus):</p>
   the list will be a dictionary containing a <code>type</code> and <code>message</code>
   field (both strings). Additional fields may be available depending
   on the type of warning.</li>
+</ul>
+<h2 id="control_mpc">control_mpc<a class="headerlink" href="#control_mpc" title="Permanent link">&para;</a></h2>
+<p>The following information is available in the <code>extruder.control_stats</code> object
+(this object is automatically available if control type for <a href="Config_Reference.html#extruder">extruder</a> config section is set to <a href="MPC.html">mpc</a>:</p>
+<ul>
+<li><code>loss_ambient</code>: The current/last ambient loss rate.</li>
+<li><code>loss_filament</code>: The current/last filament loss rate.</li>
+<li><code>filament_temp</code>: The current filament temperature.</li>
+<li><code>filament_heat_capacity</code>: The current specific heat capacity of filament in J/g/K.</li>
+<li><code>filament_density</code>: The current filament density in g/mm^3.</li>
 </ul>
 <h2 id="display_status">display_status<a class="headerlink" href="#display_status" title="Permanent link">&para;</a></h2>
 <p>The following information is available in the <code>display_status</code> object
