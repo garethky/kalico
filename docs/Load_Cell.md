@@ -148,27 +148,32 @@ counts_per_gram: 245
 reference_tare_counts: 12345
 # load cell probe settings
 trigger_force: 75
-force_safety_limit: 5000
+force_safety_limit: 2000
+drift_safety_limit: 1000
 drift_filter_cutoff_frequency: 0.5
 # probe settings
 z_offset: 0.0
 ```
-
+- `sensor_type: hx717`
 - `counts_per_gram: 245`\
-  _Default Value: None_\
-  Conversion factor from raw sensor counts to grams, calculated by `LOAD_CELL_CALIBRATE`. All probing force limits depend on this value being accurate.
-
+  These are the same as for a basic load cell
 - `reference_tare_counts: 12345`\
   _Default Value: None_\
-  Baseline tare value in raw sensor counts, set by `LOAD_CELL_CALIBRATE`. Used as the zero value for with `force_safety_limit` to define the safe operating range.
-
-- `force_safety_limit: 5000`\
-  _Default Value: 5000 (2 kilograms)_\
-  Maximum absolute force in grams, relative to `reference_tare_counts`, allowed during homing or probing. If exceeded, the probe stops with an error TK`!! Load Cell Probe Error: load exceeds safety limit`
+  Baseline tare value in raw sensor counts, set by `LOAD_CELL_CALIBRATE`. Used as the zero value for `force_safety_limit` to define the safe operating range.
 
 - `trigger_force: 75`\
   _Default Value: 75 (75 grams)_\
-  Force in grams to trigger the endstop during probing, measured relative to the tare value at the start of the probe. Expect overshoot; higher probing speed or lower sample rate increases peak force. See [Multi MCU Homing](Multi_MCU_Homing.md) for multi-MCU timing considerations.
+  Force in grams to trigger the endstop during probing, measured relative to the tare value at the start of the probe. Expect overshoot; higher probing speed or lower sample rate increases peak force. See [Multi MCU Homing](Multi_MCU_Homing.md) for multi-MCU timing considerations. The 75g default is conservative. Higher values, up to 200g, can improve performance when handling oozy filament.
+
+- `force_safety_limit: 2000`\
+  _Default Value: 2000 (+/-2Kg)_\
+  To safely start a probing move, the force on the probe must be below this limit. This treats `reference_tare_counts` as its zero value. This check can be disabled by setting the value to 0. If exceeded, the probe stops with an error `!! Load Cell Probe Error: force of 3000g exceeds force_safety_limit (2000g) before probing!`. This value needs to be large enough to allow for:
+  - Bowden tube & drag chain forces that change throughout the print volume & probing move length
+  - Temperature drift across the entire probing temperature range
+
+- `drift_safety_limit: 1000`\
+  _Default Value: 1000 (+/-1Kg)_\
+  This is the most force that the probe will allow during a probing move before triggering an error. Set to 0 to disable this safety check. If exceeded, the probe stops with an error `!! Load Cell Probe Error: force exceeded drift_safety_limit before triggering!`. This safety measure is important when using the `drift_filter_cutoff_frequency` as it is possible to defeat probe triggering with too high of a cutoff frequency.
 
 - `drift_filter_cutoff_frequency: 0.5`\
   _Default Value: None (disabled)_\
@@ -176,8 +181,7 @@ z_offset: 0.0
 
 - `z_offset: 0.0`\
   _Required_\
-  The distance (in mm) between the bed and the nozzle when the probe
-  triggers. For load cell probes this is 0.
+  The distance (in mm) between the bed and the nozzle when the probe triggers. For load cell probes this is 0.
 
 See the [configuration reference](Config_Reference.md#load_cell_probe) for all available options.
 
@@ -195,13 +199,17 @@ This setting converts raw counts to grams. All safety limits are in gram units. 
 Probing always overshoots `trigger_force` before stopping. A setting of 100 g may result in 350 g peak force. Overshoot increases with faster probing speed, low sample rate, or multi-MCU configurations.
 
 **`force_safety_limit` protection:**
-This setting prevents several failure modes:
-- Excessive `drift_filter_cutoff_frequency` causing filtered-out probe events
-- Repeated probing in one location without retraction accumulating force
-- Damaged strain gauge changing `reference_tare_counts`
-- Temperature changes altering strain gauge baseline readings
+This setting detects excessive force on the probe before starting homing or probing. If the limit is exceeded, the probe will stop with an error, e.g. `!! Load Cell Probe Error: force of 3000g exceeds force_safety_limit (2000g) before probing!`. This could be caused by: 
+- The probe colliding with the bed before probing starts. e.g. by moving horizontally into a tilted bed
+- Excessive force from the bowden tube or drag chain
+- Excessive force on the strain gauge caused by the extruder pushing on the filament
+- A damaged strain gauge, causing the zero point to move too far from the `reference_tare_counts` value
 
-If the limit is exceeded, the probe will stop with an error: `!! Load Cell Probe Error: load exceeds safety limit`
+**`drift_safety_limit` protection:**
+This sets the most force the probe will allow before it triggers. If the measured force changes by more than the limit, the probe will stop with an error: `!! Load Cell Probe Error: force exceeded drift_safety_limit before triggering!`. This could be triggered for several reasons:
+- The probe being actively heated while probing, causing the tare value to drift
+- Setting the `drift_filter_cutoff_frequency` too high, causing the tap event to be filtered out
+- A large change in the bowden tube/drag chain force while probing
 
 **Watchdog task:**
 During homing, a watchdog monitors sensor data. If the sensor fails to send measurements for 2 sample periods, the MCU shuts down with error `!! Load Cell Probe Error: timed out waiting for sensor data`. This usually indicates an ADC fault or inadequate grounding. Ensure the frame, power supply, and print bed are grounded. Multiple ground connections may be required. Sand anodized aluminum at ground connection points for good electrical contact.
@@ -314,7 +322,8 @@ Basic tuning guidelines:
 - Increase only until bowden tube drift is eliminated
 - Setting too high causes slow triggering and excessive force
 - Keep `trigger_force` low (default 75 g); the drift filter maintains internal readings near zero
-- Keep `force_safety_limit` conservative (default 5 kg) during tuning
+- Keep `force_safety_limit` conservative (default 2 kg) during tuning
+- Keep `drift_safety_limit` conservative (default 1 kg) during tuning
 
 Tuning of the other filter parameters is beyond the scope of this documentation. 
 A Jupyter notebook is provided in [scripts/filter_workbench.ipynb](../scripts/filter_workbench.ipynb) with an example of a detailed analysis.

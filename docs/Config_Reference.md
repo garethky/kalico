@@ -5976,9 +5976,13 @@ sensor_type:
 #sensor_orientation:
 #   These parameters must be configured before the probe will operate.
 #   See the [load_cell] section for further details.
-#force_safety_limit: 5000
-#   The safe limit for probing force relative to the reference_tare_counts on
-#   the load_cell. The default is +/-2Kg.
+#force_safety_limit: 2000
+#   The safe force limit for starting a probe. This is relative to the 
+#   reference_tare_counts which is the sensor's absolute 0 force value.
+#   Set to 0 to disable. The default is +/-2Kg.
+#drift_safety_limit: 1000
+#   The maximum absolute force change allowed while probing. Set to 0 to disable.
+#   The default is +/-1Kg.
 #trigger_force: 75.0
 #   The force that the probe will trigger at. 75g is the default.
 #drift_filter_cutoff_frequency: 0.8
