@@ -2815,6 +2815,12 @@ move  to the dock and return back to home_xy_position.</li>
 <span class="ss">z_hop</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span>
 </code></pre></div>
 
+<p>When using <code>safe_z_home</code>, the probe can be made to detach automatically when Z 
+is homed.</p>
+<div class="highlight"><pre><span></span><code><span class="p">[</span><span class="n">dockable_probe</span><span class="p">]</span>
+<span class="ss">detach_dockable_before_z_home</span><span class="p">:</span><span class="w"> </span><span class="nc">True</span>
+</code></pre></div>
+
 <h3 id="probe-attachment-verification">Probe Attachment Verification<a class="headerlink" href="#probe-attachment-verification" title="Permanent link">&para;</a></h3>
 <p>Given the nature of this type of probe, it is necessary to verify whether or
 not it has successfully attached prior to attempting a probing move. Several
