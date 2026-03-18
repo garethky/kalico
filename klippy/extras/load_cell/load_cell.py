@@ -3,7 +3,10 @@
 # Copyright (C) 2024 Gareth Farrington <gareth@waves.ky>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
+from __future__ import annotations
+
 import collections
+import logging
 
 from klippy.configfile import ConfigWrapper
 from klippy.extras.bulk_sensor import BatchWebhooksClient
@@ -97,8 +100,9 @@ class LoadCellCommandHelper:
     cmd_LOAD_CELL_TARE_help = "Set the Zero point of the load cell"
 
     def cmd_LOAD_CELL_TARE(self, gcmd):
-        tare_counts = self.load_cell.avg_counts()
-        self.load_cell.tare(tare_counts)
+        tare_counts_per_channel = self.load_cell.avg_counts()
+        self.load_cell.tare(tare_counts_per_channel)
+        tare_counts = self.load_cell.tare_counts
         tare_percent = self.load_cell.counts_to_percent(tare_counts)
         tare_force = self.load_cell.tare_force
         if tare_force is not None:
@@ -111,6 +115,9 @@ class LoadCellCommandHelper:
                 "Load cell tare value: 0 = %.2f%% (%i)"
                 % (tare_percent, tare_counts)
             )
+        if self.load_cell.channel_count > 1:
+            for idx, ch_counts in enumerate(tare_counts_per_channel):
+                gcmd.respond_info("  Channel %d tare: %i" % (idx, ch_counts))
 
     cmd_CALIBRATE_LOAD_CELL_help = "Start interactive calibration tool"
 
@@ -120,7 +127,8 @@ class LoadCellCommandHelper:
     cmd_LOAD_CELL_READ_help = "Take a reading from the load cell"
 
     def cmd_LOAD_CELL_READ(self, gcmd):
-        counts = self.load_cell.avg_counts()
+        counts_per_channel = self.load_cell.avg_counts()
+        counts = sum(counts_per_channel)
         percent = self.load_cell.counts_to_percent(counts)
         force = self.load_cell.counts_to_grams(counts)
         if percent >= 100 or percent <= -100:
@@ -129,6 +137,19 @@ class LoadCellCommandHelper:
             gcmd.respond_info("---.-g (%.2f%%)" % (percent,))
         else:
             gcmd.respond_info("%.1fg (%.2f%%)" % (force, percent))
+        if self.load_cell.channel_count > 1:
+            for idx, ch_counts in enumerate(counts_per_channel):
+                ch_force = self.load_cell.channel_counts_to_grams(
+                    idx, ch_counts
+                )
+                if ch_force is not None:
+                    gcmd.respond_info(
+                        "  Channel %d: %.1fg (%i)" % (idx, ch_force, ch_counts)
+                    )
+                else:
+                    gcmd.respond_info(
+                        "  Channel %d: ---.-g (%i)" % (idx, ch_counts)
+                    )
 
     cmd_LOAD_CELL_DIAGNOSTIC_help = "Check the health of the load cell"
 
@@ -186,7 +207,8 @@ class LoadCellGuidedCalibrationHelper:
         self.printer = printer
         self.gcode = printer.lookup_object("gcode")
         self.load_cell = load_cell
-        self._tare_counts = self._counts_per_gram = None
+        self._tare_counts: tuple[int, ...] | None = None
+        self._counts_per_gram: float | None = None
         self.tare_percent = 0.0
         self.register_commands()
         self.gcode.respond_info(
@@ -219,16 +241,17 @@ class LoadCellGuidedCalibrationHelper:
         )
 
     # convert the delta of counts to a counts/gram metric
-    def counts_per_gram(self, grams, cal_counts):
-        return float(abs(int(self._tare_counts - cal_counts))) / grams
+    def counts_per_gram(self, grams: float, cal_counts: tuple[int, ...]):
+        tare_sum = sum(self._tare_counts)
+        cal_sum = sum(cal_counts)
+        return float(abs(tare_sum - cal_sum)) / grams
 
     # calculate max force that the load cell can register
     # given tare bias, at saturation in kilograms
-    def capacity_kg(self, counts_per_gram):
+    def capacity_kg(self, counts_per_gram: float):
         range_min, range_max = self.load_cell.saturation_range()
-        return (
-            int((range_max - abs(self._tare_counts)) / counts_per_gram) / 1000.0
-        )
+        tare_sum = sum(self._tare_counts)
+        return int((range_max - abs(tare_sum)) / counts_per_gram) / 1000.0
 
     def finalize(self, save_results=False):
         for name in ["ABORT", "ACCEPT", "TARE", "CALIBRATE"]:
@@ -241,13 +264,14 @@ class LoadCellGuidedCalibrationHelper:
                 "Calibration process is incomplete, aborting"
             )
         self.load_cell.set_calibration(self._counts_per_gram, self._tare_counts)
+        ref_tare_str = ", ".join("%i" % c for c in self._tare_counts)
         self.gcode.respond_info(
             "Load cell calibration settings:\n\n"
             "counts_per_gram: %.6f\n"
-            "reference_tare_counts: %i\n\n"
+            "reference_tare_counts: %s\n\n"
             "The SAVE_CONFIG command will update the printer config file"
             " with the above and restart the printer."
-            % (self._counts_per_gram, self._tare_counts)
+            % (self._counts_per_gram, ref_tare_str)
         )
         self.load_cell.tare(self._tare_counts)
 
@@ -266,10 +290,10 @@ class LoadCellGuidedCalibrationHelper:
     def cmd_TARE(self, gcmd):
         self._tare_counts = self.load_cell.avg_counts()
         self._counts_per_gram = None  # require re-calibration on tare
-        self.tare_percent = self.load_cell.counts_to_percent(self._tare_counts)
+        tare_sum = sum(self._tare_counts)
+        self.tare_percent = self.load_cell.counts_to_percent(tare_sum)
         gcmd.respond_info(
-            "Load cell tare value: %.2f%% (%i)"
-            % (self.tare_percent, self._tare_counts)
+            "Load cell tare value: %.2f%% (%i)" % (self.tare_percent, tare_sum)
         )
         if self.tare_percent > 2.0:
             gcmd.respond_info(
@@ -290,16 +314,17 @@ class LoadCellGuidedCalibrationHelper:
             return
         grams = gcmd.get_float("GRAMS", minval=50.0, maxval=25000.0)
         cal_counts = self.load_cell.avg_counts()
-        cal_percent = self.load_cell.counts_to_percent(cal_counts)
+        cal_sum = sum(cal_counts)
+        cal_percent = self.load_cell.counts_to_percent(cal_sum)
         c_per_g = self.counts_per_gram(grams, cal_counts)
         cap_kg = self.capacity_kg(c_per_g)
         gcmd.respond_info(
             "Calibration value: %.2f%% (%i), Counts/gram: %.5f, \
             Total capacity: +/- %0.2fKg"
-            % (cal_percent, cal_counts, c_per_g, cap_kg)
+            % (cal_percent, cal_sum, c_per_g, cap_kg)
         )
         range_min, range_max = self.load_cell.saturation_range()
-        if cal_counts >= range_max or cal_counts <= range_min:
+        if cal_sum >= range_max or cal_sum <= range_min:
             raise self.printer.command_error(
                 "ERROR: Sensor is saturated with too much load!\n"
                 "Use less force to calibrate the load cell."
@@ -397,8 +422,8 @@ class LoadCellSampleCollector:
             if result is None:
                 self._finish_collecting()
                 raise self._printer.command_error(
-                    "LoadCellSampleCollector timed out! Errors: %i,"
-                    " Overflows: %i" % (self._errors, self._overflows)
+                    f"LoadCellSampleCollector timed out! Errors: {self._errors},"
+                    f" Overflows: {self._overflows}"
                 )
         return self._finish_collecting()
 
@@ -443,13 +468,29 @@ class LoadCell:
         self.config_name = config.get_name()
         self.name = config.get_name().split()[-1]
         self.sensor = sensor
+        self.channel_count = self.sensor.get_channel_count()
         buffer_size = sensor.get_samples_per_second() // 2
         self._force_buffer = collections.deque(maxlen=buffer_size)
-        self.reference_tare_counts = config.getint(
-            "reference_tare_counts", default=None
+        self._channel_force_buffers: list[collections.deque] = [
+            collections.deque(maxlen=buffer_size)
+            for _ in range(self.channel_count)
+        ]
+        ref_tare = config.getintlist("reference_tare_counts", default=None)
+        if ref_tare is not None:
+            if len(ref_tare) != self.channel_count:
+                raise config.error(
+                    "reference_tare_counts has %d values, expected %d"
+                    % (len(ref_tare), self.channel_count)
+                )
+        self.reference_tare_counts_per_channel: tuple[int, ...] | None = (
+            ref_tare
         )
+        self.reference_tare_counts: int | None = (
+            sum(ref_tare) if ref_tare is not None else None
+        )
+        self.tare_counts_per_channel = self.reference_tare_counts_per_channel
         self.tare_counts = self.reference_tare_counts
-        self.tare_force = (
+        self.tare_force: float | None = (
             0.0 if self.reference_tare_counts is not None else None
         )
         self.counts_per_gram = config.getfloat(
@@ -463,7 +504,12 @@ class LoadCell:
         LoadCellCommandHelper(config, self)
         # Client support:
         self.clients = ApiClientHelper(printer)
-        header = {"header": ["time", "force (g)", "counts", "tare_counts"]}
+        header_labels = ["time", "force (g)", "counts", "tare_counts"]
+        if self.channel_count > 1:
+            for idx in range(self.channel_count):
+                header_labels.append(f"channel-{idx} force (g)")
+                header_labels.append(f"channel-{idx} counts")
+        header = {"header": header_labels}
         self.clients.add_mux_endpoint(
             "load_cell/dump_force", "load_cell", self.name, header
         )
@@ -488,10 +534,25 @@ class LoadCell:
             return None
         samples = []
         for row in data:
-            # [time, grams, counts, tare_counts]
-            samples.append(
-                [row[0], self.counts_to_grams(row[1]), row[1], self.tare_counts]
-            )
+            channel_counts = row[1:][::2]
+            if len(channel_counts) != self.channel_count:
+                logging.info(
+                    f"Missing Sensor Channels! Expected: "
+                    f"{self.channel_count}, found "
+                    f"{len(channel_counts)}"
+                )
+            sum_counts = sum(channel_counts)
+            sample = [
+                row[0],
+                self.counts_to_grams(sum_counts),
+                sum_counts,
+                self.tare_counts,
+            ]
+            if self.channel_count > 1:
+                for idx, counts in enumerate(channel_counts):
+                    sample.append(self.channel_counts_to_grams(idx, counts))
+                    sample.append(counts)
+            samples.append(sample)
         msg = {"data": samples, "errors": errors, "overflows": overflows}
         self.clients.send(msg)
         return True
@@ -500,25 +561,31 @@ class LoadCell:
     def add_client(self, callback):
         self.clients.add_client(callback)
 
-    def tare(self, tare_counts):
-        self.tare_counts = int(tare_counts)
+    def tare(self, tare_counts_per_channel: tuple[int, ...]):
+        self.tare_counts_per_channel = tare_counts_per_channel
+        self.tare_counts = sum(tare_counts_per_channel)
         if self.is_calibrated():
-            tare_delta = float(tare_counts - self.reference_tare_counts)
+            tare_delta = float(self.tare_counts - self.reference_tare_counts)
             self.tare_force = round(
                 self.invert * (tare_delta / self.counts_per_gram), 1
             )
         self.printer.send_event("load_cell:tare", self)
 
-    def set_calibration(self, counts_per_gram, tare_counts):
+    def set_calibration(
+        self,
+        counts_per_gram: float,
+        tare_counts_per_channel: tuple[int, ...],
+    ):
         if (
             counts_per_gram is None
             or abs(counts_per_gram) < MIN_COUNTS_PER_GRAM
         ):
             raise self.printer.command_error("Invalid counts per gram value")
-        if tare_counts is None:
+        if tare_counts_per_channel is None:
             raise self.printer.command_error("Missing tare counts")
         self.counts_per_gram = counts_per_gram
-        self.reference_tare_counts = int(tare_counts)
+        self.reference_tare_counts_per_channel = tare_counts_per_channel
+        self.reference_tare_counts = sum(tare_counts_per_channel)
         configfile = self.printer.lookup_object("configfile")
         configfile.set(
             self.config_name,
@@ -528,19 +595,33 @@ class LoadCell:
         configfile.set(
             self.config_name,
             "reference_tare_counts",
-            "%i" % (self.reference_tare_counts,),
+            ", ".join("%i" % c for c in self.reference_tare_counts_per_channel),
         )
         self.printer.send_event("load_cell:calibrate", self)
 
-    def counts_to_grams(self, sample):
+    def counts_to_grams(self, counts: int) -> float | None:
         if not self.is_calibrated() or not self.is_tared():
             return None
-        sample_delta = float(sample - self.tare_counts)
+        sample_delta = float(counts - self.tare_counts)
         return self.invert * (sample_delta / self.counts_per_gram)
 
-    # The maximum range of the sensor based on its bit width
-    def saturation_range(self):
+    def channel_counts_to_grams(
+        self, channel_idx: int, counts: int
+    ) -> float | None:
+        if not self.is_calibrated() or not self.is_tared():
+            return None
+        channel_tare = self.tare_counts_per_channel[channel_idx]
+        sample_delta = float(counts - channel_tare)
+        return self.invert * (sample_delta / self.counts_per_gram)
+
+    # The maximum range of a single ADC channel, based on its bit width
+    def channel_saturation_range(self):
         return self.sensor.get_range()
+
+    # The maximum range for the sum of all channels
+    def saturation_range(self):
+        range_min, range_max = self.channel_saturation_range()
+        return range_min * self.channel_count, range_max * self.channel_count
 
     # convert raw counts to a +/- percentage of the sensors range
     def counts_to_percent(self, counts):
@@ -549,7 +630,7 @@ class LoadCell:
 
     # read 1 second of load cell data and average it
     # performs safety checks for saturation
-    def avg_counts(self, num_samples=None):
+    def avg_counts(self, num_samples: int | None = None) -> tuple[int, ...]:
         if num_samples is None:
             num_samples = self.sensor.get_samples_per_second()
         samples, errors = self.get_collector().collect_min(num_samples)
@@ -558,23 +639,31 @@ class LoadCell:
                 "Sensor reported %i errors while sampling"
                 % (errors[0] + errors[1])
             )
-        # check samples for saturated readings
-        range_min, range_max = self.saturation_range()
+        # check individual channels for saturated readings
+        range_min, range_max = self.channel_saturation_range()
         for sample in samples:
-            if sample[2] >= range_max or sample[2] <= range_min:
-                raise self.printer.command_error(
-                    "Some samples are saturated (+/-100%)"
-                )
-        return avg(select_column(samples, 2))
+            if self.channel_count > 1:
+                channel_counts = sample[5::2]
+            else:
+                channel_counts = [sample[2]]
+            for counts in channel_counts:
+                if counts >= range_max or counts <= range_min:
+                    raise self.printer.command_error(
+                        "Some samples are saturated (+/-100%)"
+                    )
+        return self.avg_counts_from_samples(samples)
 
     # Provide ongoing force tracking/averaging for status updates
     def _track_force(self, msg):
         if not (self.is_calibrated() and self.is_tared()):
             return True
         samples = msg["data"]
-        # selectColumn unusable here because Python 2 lacks deque.extend
         for sample in samples:
             self._force_buffer.append(sample[1])
+            if self.channel_count > 1:
+                for idx in range(self.channel_count):
+                    col = 4 + (idx * 2)
+                    self._channel_force_buffers[idx].append(sample[col])
         return True
 
     def _force_g(self):
@@ -589,6 +678,18 @@ class LoadCell:
                 "max_force_g": round(max(self._force_buffer), 1),
             }
         return {}
+
+    def _channel_force_g(self) -> list[float] | None:
+        if self.channel_count <= 1:
+            return None
+        if not (self.is_calibrated() and self.is_tared()):
+            return None
+        result: list[float] = []
+        for buf in self._channel_force_buffers:
+            if len(buf) == 0:
+                return None
+            result.append(round(avg(buf), 1))
+        return result
 
     def is_tared(self):
         return self.tare_counts is not None
@@ -611,6 +712,15 @@ class LoadCell:
     def get_counts_per_gram(self):
         return self.counts_per_gram
 
+    def avg_counts_from_samples(self, samples: list) -> tuple[int, ...]:
+        if self.channel_count == 1:
+            return (int(avg(select_column(samples, 2))),)
+        per_channel: list[int] = []
+        for idx in range(self.channel_count):
+            col = 4 + (idx * 2) + 1
+            per_channel.append(int(avg(select_column(samples, col))))
+        return tuple(per_channel)
+
     def get_collector(self):
         return LoadCellSampleCollector(self.printer, self)
 
@@ -623,6 +733,11 @@ class LoadCell:
                 "reference_tare_counts": self.reference_tare_counts,
                 "tare_counts": self.tare_counts,
                 "tare_force": self.tare_force,
+                "reference_tare_counts_per_channel": (
+                    self.reference_tare_counts_per_channel
+                ),
+                "tare_counts_per_channel": self.tare_counts_per_channel,
+                "force_g_per_channel": self._channel_force_g(),
             }
         )
         return status

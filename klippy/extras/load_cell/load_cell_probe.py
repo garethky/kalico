@@ -568,18 +568,20 @@ class McuLoadCellProbe:
     def get_dispatch(self):
         return self._dispatch
 
-    def set_endstop_range(self, tare_counts: int, gcmd=None):
+    def set_endstop_range(
+        self, tare_counts_per_channel: tuple[int, ...], gcmd=None
+    ):
         # update the load cell so it reflects the new tare value
-        self._load_cell.tare(tare_counts)
-        # update internal tare value
+        self._load_cell.tare(tare_counts_per_channel)
+        tare_counts_sum = sum(tare_counts_per_channel)
         safety_min, safety_max = self._config_helper.get_probe_drift_range(
-            tare_counts, gcmd
+            tare_counts_sum, gcmd
         )
         args = [
             self._oid,
             safety_min,
             safety_max,
-            tare_counts,
+            tare_counts_sum,
             self._config_helper.get_trigger_force_grams(gcmd),
             self._config_helper.get_grams_per_count(),
         ]
@@ -661,16 +663,18 @@ class LoadCellPrimitives:
     def tare(self, gcmd=None):
         collector = self._start_collector()
         num_samples = self._config_helper.get_tare_samples(gcmd)
-        # use collect_min collected samples are not wasted
         results = collector.collect_min(num_samples)
         tare_samples = check_sensor_errors(results, self._printer)
-        tare_counts = int(
-            np.average(np.array(tare_samples)[:, 2].astype(float))
+        tare_counts_per_channel = self._load_cell.avg_counts_from_samples(
+            tare_samples
         )
+        tare_counts = sum(tare_counts_per_channel)
         self._config_helper.assert_force_safety_limit(tare_counts, gcmd)
         # update sos_filter with any gcode parameter changes
         self._continuous_tare_filter_helper.update_from_command(gcmd)
-        self._mcu_load_cell_probe.set_endstop_range(tare_counts, gcmd)
+        self._mcu_load_cell_probe.set_endstop_range(
+            tare_counts_per_channel, gcmd
+        )
 
     def home_start(self, print_time):
         # do not permit homing if the load cell is not calibrated
