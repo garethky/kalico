@@ -1158,6 +1158,27 @@ nozzle is completely clean.
 See [Tap Quality Calibration](Load_Cell.md#tap-quality-calibration) for choosing 
 thresholds and interpreting results.
 
+#### PRESSURE_ADVANCE Calibration
+`LOAD_CELL_PROBE_CALIBRATE CALIBRATION=PRESSURE_ADVANCE [TEMP=<degrees>] [SPEED=<mm/s>] [ACCEL=<mm/s^2>] [LENGTH=<mm>] [JUNCTIONS=<count>] [WIDTH=<mm>] [LINE_WIDTH=<mm>] [LAYER_HEIGHT=<mm>] [FLOW_MULTIPLIER=<ratio>] [NOZZLE_DIAMETER=<mm>] [OUTPUT_PATH=<path>]`
+
+Prints a pressure advance test pattern and estimates a pressure advance value
+from load cell data.
+
+- `TEMP` is required. The command heats the active extruder to that target and
+  waits before any purge or calibration extrusion begins.
+- `WIDTH` sets the maximum physical X span used by the printed pattern. If it is
+  omitted, the command defaults to the current X position to the configured
+  `bed_mesh` X maximum minus 10mm. If `bed_mesh` is not configured it falls
+  back to the machine X maximum.
+- `LENGTH` is the virtual segment length used by the analysis. When `LENGTH` and
+  `JUNCTIONS` would exceed `WIDTH`, the routine compresses the physical pattern
+  internally while preserving the requested extrusion conditions.
+- `JUNCTIONS` defaults to 10.
+- `OUTPUT_PATH` writes a JSON capture of the measurement and analysis.
+
+See [Load Cell](Load_Cell.md#pressure-advance-calibration) for workflow,
+constraints, and interpretation guidance.
+
 ### [manual_probe]
 
 The manual_probe module is automatically loaded.

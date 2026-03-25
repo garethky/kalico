@@ -324,6 +324,50 @@ Accepts all [BED_MESH_CALIBRATE](G-Codes.md#bed_mesh_calibrate) parameters for m
 - `pullback_speed` or load cell sample rate changes
 - Tap quality warnings become too frequent or too rare
 
+#### Pressure Advance Calibration
+
+`LOAD_CELL_PROBE_CALIBRATE CALIBRATION=PRESSURE_ADVANCE`
+
+This command prints a test pattern and observes the pressure that the extrusion system applies to the toolhead. From this it creates an estimate of the delay between extrusion moves and observed pressure changes. This can then be used as the PA value for the filament/speed/acceleration combination.
+
+Before running the command you need to:
+* Bed mesh the area you want to print on and activate the mesh (or extrude into free air by raising the nozzle)
+* Position the toolhead at the left edge of the printing area
+
+##### Extrusion Parameters
+These parameters describe the printing condition that you want to calibrate for. There are only 3 required parameters:
+
+- `TEMP` - The printing temperature for the filament. The nozzle will be heated to this temp
+- `SPEED` - print speed in mm/s
+- `ACCEL` - acceleration in mm/s^2
+
+These additional settings are available, they have sensible defaults derived from the printer's configuration:
+
+- `LINE_WIDTH` - how wide you are trying to pint in mm. Default to 1.125 x nozzle diameter. e.g. 0.45mm for a 0.4mm nozzle.
+- `LAYER_HEIGHT` - how tall your printed layers are in mm. Defaults to 0.2mm
+- `FLOW_MULTIPLIER` -  any extrusion multiplier you have for the filament, defaults to 1.0
+- `NOZZLE_DIAMETER` - defaults to the `nozzle_diameter` setting for the active extruder.
+
+##### Printing Parameters
+These controls how the test will print. The extrusion prints in a fixed left to right orientation from the location where the nozzle is when the command is run.
+
+* `LENGTH=100` - the length of the "virtual" printed line, defaults to 100mm. This needs to be long enough for the extrusion system to reach a steady flow state.
+* `JUNCTIONS=10` - This is the number of simulated square corner junctions to include in the test. The result is the average of all junction tests. The default is 10.
+* `WIDTH` - The maximum physical width of the printed test pattern. The default is to print starting from the current nozzle position:
+  * If there is an active bed mesh, the print ends at the edge of the mesh.
+  * If there is no mesh the print ends 10mm before the end of the X axis envelope. (TK, maybe this is dangerous?)
+  
+  If you set `WIDTH` larger than the remaining X travel the command fails.
+
+*TODO:*
+* Support setting `WIDTH=0` which prints everything at the current location, ideally that is a purge bucket. In this case no machine constraints are checked.
+* Support round beds by printing in a circle at the current radius.
+
+`WIDTH` and `JUNCTIONS` are used to calculate how much the requested `LENGTH` value needs to be shrunk to fit in the available space. The test simulates the longer `LENGTH` by scaling down the physical printed length and acceleration while keeping everything about the extrusion the same. This results in a print that looks a lot like a purge line.
+
+The current height of the toolhead is used to calculate if you are likely to extrude too much material in too small of a space and foul the nozzle. A cross-section that is 5x the nozzle diameter * the current height is the maximum allowed. If the requested pattern won't fit in those bounds the command fails with an error.
+
+
 ### Probing Temperature
 
 Keep nozzle temperature below the filament oozing point during homing and probing. 140°C is a good starting point for all filament types.

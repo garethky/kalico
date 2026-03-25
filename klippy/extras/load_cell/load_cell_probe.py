@@ -25,6 +25,7 @@ from .load_cell import (
     LoadCell,
     LoadCellSampleCollector,
 )
+from .pressure_advance_calibration import PressureAdvanceCalibration
 from .tap_analysis import TapAnalysis, TapAnalysisHelper, TapClassifierModule
 from .tap_quality_classifier import TapQualityClassifier
 
@@ -1374,6 +1375,10 @@ class LoadCellPrinterProbe:
             self._config_helper,
             self._tap_analysis_helper.set_calibration_callback,
         )
+        self._pa_calibration = PressureAdvanceCalibration(
+            config,
+            self._load_cell,
+        )
         self._register_macros()
 
     def _register_macros(self):
@@ -1396,6 +1401,8 @@ class LoadCellPrinterProbe:
             self._tap_classifier, TapQualityClassifier
         ):
             self._tap_classifier.calibrate(gcmd)
+        elif calibration == "PRESSURE_ADVANCE":
+            self._pa_calibration.calibrate(gcmd)
         elif not calibration:
             gcmd.error(
                 "CALIBRATION must be one of DRIFT_FILTER, "
