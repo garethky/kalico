@@ -8,6 +8,10 @@ All dates in this document are approximate.
 
 ## Changes
 
+20261021: Users of HX711 and HX717 load cell sensors need to reflash their MCUs
+as the communication protocol for these sensors has changed to support the
+HX71708 which doesn't support changing the gain setting.
+
 20261021: The temporary acceleration and velocity limits applied during
 `TEST_RESONANCES` and `SHAPER_CALIBRATE` are now derived from the actual
 test sequence instead of only the configured `accel_per_hz`. Previously an
