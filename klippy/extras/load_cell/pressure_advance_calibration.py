@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from sys import float_info
 
 import numpy as np
 from scipy import signal
@@ -26,13 +26,10 @@ from klippy.printer import Printer
 from klippy.toolhead import ToolHead
 
 ## TODO/Ideas
-# * allows SPEED and ACCEL to be arrays and then SPEED x ACCEL tests to support
-# adaptive pressure advance
 # * Save the results in a printer state object to support scripting,
 # e.g. printing a test patters with the value afterwards
 # * Have a flag that sets the current PA value to the calculated value at the
 # end of the test
-# * make the Y move a print move so the purge pressure doesnt drop.
 # Support round beds by printing in an arc about the center.
 
 ## Testing
@@ -111,7 +108,7 @@ class TrapqMove:
         return (self.start_v + (0.5 * self.accel * self.move_t)) * self.move_t
 
     def is_nano_coast(self) -> bool:
-        return self.move_t < 0.0000000001 and self.accel == 0.0
+        return self.move_t < float_info.epsilon and self.accel == 0.0
 
     # Bed mesh splits moves in the TRAPQ. This method re-combine sequential
     # moves that have the same acceleration value into 1 move.
@@ -153,6 +150,9 @@ class TrapqMove:
 
 @dataclass(frozen=True)
 class PADataRecord:
+    speed: float
+    accel: float
+    flow_rate: float
     time: list[float]
     force: list[float]
     junctions: list[Junction]
@@ -353,10 +353,12 @@ class ParamsGrabber:
         )
         self.filament_area: float = self.extruder.filament_area
         # Extrusion parameters
-        self.speed: float = gcmd.get_float("SPEED", 120.0, above=0.0)
-        self.accel: float = gcmd.get_float(
-            "ACCEL", self.toolhead.max_accel, above=0.0
+        self.speed: list[float] = self._get_float_list("SPEED", above=0.0)
+        self.accel: list[float] = self._get_float_list(
+            "ACCEL", above=0.0, maxval=self.toolhead.max_accel
         )
+        if len(self.speed) != len(self.accel):
+            raise gcmd.error("Speed and accel nees to be the same length")
         self.length: float = gcmd.get_float("LENGTH", 100.0, above=0.0)
         self.layer_height: float = gcmd.get_float(
             "LAYER_HEIGHT", 0.2, above=0.0
@@ -374,17 +376,37 @@ class ParamsGrabber:
         self.junctions: int = gcmd.get_int("JUNCTIONS", 10, minval=1)
         available_width: float = self._get_available_width()
         default_width: float = available_width - TEST_PATTERN_MARGIN
-        width: float | None = gcmd.get_float(
+        self.width: float = gcmd.get_float(
             "WIDTH", above=0.0, maxval=available_width, default=default_width
         )
-        self.compression_factor: float = self._calculate_compression_factor(
-            width
-        )
-        gcmd.respond_info(
-            f"Width: {width}, Compression_factor: {self.compression_factor}"
-        )
-        self._validate_pattern_cross_section()
         self.output_path = gcmd.get("OUTPUT_PATH", default=None)
+
+    def _get_float_list(
+        self, name: str, above: float = None, maxval: float = None
+    ) -> list[float]:
+        value = self.gcmd.get(name, default="")
+        # Return an empty list for empty value
+        if len(value.strip()) == 0:
+            return []
+        try:
+            float_list: list[float] = [
+                float(p.strip()) for p in value.split(",")
+            ]
+        except:
+            raise self.gcmd.error(
+                f"Error on '{self.gcmd.get_commandline()}': unable to parse"
+                f" {value}"
+            )
+        for val in float_list:
+            if above is not None and val <= above:
+                raise self.gcmd.error(
+                    f"{name} value {val} must be above {above}"
+                )
+            if maxval is not None and val > maxval:
+                raise self.gcmd.error(
+                    f"{name} value {val} must be less than {maxval}"
+                )
+        return float_list
 
     def _get_bed_mesh_x_max(self) -> float | None:
         bed_mesh = self.printer.lookup_object("bed_mesh", default=None)
@@ -407,42 +429,71 @@ class ParamsGrabber:
         x_pos: float = self.toolhead.get_position()[0]
         return x_max - x_pos
 
-    def _calculate_compression_factor(self, width: float) -> float:
-        segment_count: int = self.junctions + 1
-        junction_lengths: float = self.junctions * JUNCTION_LENGTH
-        printed_segments_length: float = width - junction_lengths
-        if printed_segments_length / float(segment_count) < 1.0:
-            raise self.gcmd.error("segment size is too small (less than 1.0mm)")
-        total_virtual_length = segment_count * self.length
-        compression: float = total_virtual_length / printed_segments_length
-        return max(compression, 1.0)
 
-    def _validate_pattern_cross_section(self):
-        # use the "nominal" z value before BedMesh correct it
-        gcode_move: GCodeMove = self.printer.lookup_object("gcode_move")
-        current_z: float = gcode_move.last_position[2]
-        if current_z <= 0.0:
-            raise self.gcmd.error(
-                "PA test pattern requires positive Z height, current Z=%.3f"
-                % (current_z,)
-            )
-        max_cross_section: float = (
-            MAX_NOZZLE_WIDTH_MULTIPLE * self.nozzle_diameter * current_z
+class PATestPattern:
+    def __init__(
+        self,
+        printer: Printer,
+        params_grabber: ParamsGrabber,
+        speed: float,
+        accel: float,
+        cmd_err,
+        x_direction: float = 1.0,
+        y_direction: float = 1.0,
+    ):
+        self.speed: float = speed
+        self.accel: float = accel
+        self.x_direction: float = x_direction
+        self.y_direction: float = y_direction
+        self._printer: Printer = printer
+        self._toolhead: ToolHead = printer.lookup_object("toolhead")
+        self._gcode: GCodeDispatch = printer.lookup_object("gcode")
+        self._heaters = printer.lookup_object("heaters")
+        self._extruder_heater: Heater = params_grabber.extruder.get_heater()
+        self.layer_height: float = params_grabber.layer_height
+        self.flow_multiplier: float = params_grabber.flow_multiplier
+        self.line_width: float = params_grabber.line_width
+        self.filament_area: float = params_grabber.filament_area
+        self.corner_length: float = JUNCTION_LENGTH
+        self.purge_segments: int = 1  # TODO: let the user decide how many
+        virtual_length: float = params_grabber.length
+        junctions = params_grabber.junctions
+        self.segments = junctions + 1
+        total_virtual_length = (
+            (self.segments * virtual_length)
+            + (junctions * self.corner_length)
+            + (self.purge_segments * virtual_length)
         )
-        line_area: float = (
-            self.line_width * self.layer_height * self.flow_multiplier
+        self.compression_factor = max(
+            total_virtual_length / params_grabber.width, 1.0
         )
-        segment_volume: float = line_area * self.length
-        segment_length: float = self.length / self.compression_factor
-        segment_cross_section: float = segment_volume / segment_length
-        if segment_cross_section <= max_cross_section:
-            return
-        raise self.gcmd.error(
-            "compressed PA pattern cross-section %.3fmm^2 exceeds "
-            "safe limit %.3fmm^2 at current Z=%.1fmm; raise Z, "
-            "increase available WIDTH"
-            % (segment_cross_section, max_cross_section, current_z)
+        self._validate_cross_section(params_grabber, cmd_err)
+        self.segment_line_width = self.line_width * self.compression_factor
+        # Corner move setup
+        self.corner_speed: float = params_grabber.square_corner_velocity
+        self.corner_extrusion_length = (
+            self.extrusion_mm_per_mm(self.segment_line_width)
+            * self.corner_length
         )
+        # Compress the physical pattern to fit WIDTH while preserving the
+        # requested extrusion conditions in the analysis.
+        self.segment_speed = speed / self.compression_factor
+        self.segment_accel = accel / self.compression_factor
+        self.segment_length = params_grabber.length / self.compression_factor
+        self.segment_extrusion_length = (
+            self.extrusion_mm_per_mm(self.segment_line_width)
+            * self.segment_length
+        )
+        # purge needs to include the length of all the corner junctions
+        self.purge_length = self.purge_segments * self.segment_length
+        self.purge_extrusion_length = (
+            self.extrusion_mm_per_mm(self.segment_line_width)
+            * self.purge_length
+        )
+        # use the print speed as the travel speed
+        self.travel_speed: float = speed
+        self.extruder_temp: float = params_grabber.temp
+        self.original_pa = params_grabber.original_pa
 
     # the mm of filament to extrude for every mm of printed length
     def extrusion_mm_per_mm(self, line_width: float) -> float:
@@ -450,52 +501,40 @@ class ParamsGrabber:
             line_width * self.layer_height * self.flow_multiplier
         ) / self.filament_area
 
+    @property
+    def cross_sectional_area(self) -> float:
+        return self.line_width * self.layer_height * self.flow_multiplier
 
-class PATestPattern:
-    def __init__(self, printer: Printer, params_grabber: ParamsGrabber):
-        self._printer: Printer = printer
-        self._toolhead: ToolHead = printer.lookup_object("toolhead")
-        self._gcode: GCodeDispatch = printer.lookup_object("gcode")
-        self._heaters = printer.lookup_object("heaters")
-        self._extruder_heater: Heater = params_grabber.extruder.get_heater()
-        self.segment_line_width = (
-            params_grabber.line_width * params_grabber.compression_factor
+    # Flow rate in mm^3/s
+    @property
+    def flow_rate(self) -> float:
+        return self.cross_sectional_area * self.speed
+
+    def _validate_cross_section(self, params: ParamsGrabber, cmd_err):
+        gcode_move: GCodeMove = self._printer.lookup_object("gcode_move")
+        current_z: float = gcode_move.last_position[2]
+        if current_z <= 0.0:
+            raise cmd_err(
+                "PA test pattern requires positive Z height,"
+                " current Z=%.3f" % (current_z,)
+            )
+        max_cross_section: float = (
+            MAX_NOZZLE_WIDTH_MULTIPLE * params.nozzle_diameter * current_z
         )
-        # Corner move setup
-        self.corner_length: float = JUNCTION_LENGTH
-        self.corner_speed: float = params_grabber.square_corner_velocity
-        self.corner_extrusion_length = (
-            params_grabber.extrusion_mm_per_mm(self.segment_line_width)
-            * self.corner_length
+        line_area: float = (
+            params.line_width * params.layer_height * params.flow_multiplier
         )
-        # Compress the physical pattern to fit WIDTH while preserving the
-        # requested extrusion conditions in the analysis.
-        self.segments = params_grabber.junctions + 1
-        self.segment_speed = (
-            params_grabber.speed / params_grabber.compression_factor
+        segment_volume: float = line_area * params.length
+        segment_length: float = params.length / self.compression_factor
+        segment_cross_section: float = segment_volume / segment_length
+        if segment_cross_section <= max_cross_section:
+            return
+        raise cmd_err(
+            "compressed PA pattern cross-section %.3fmm^2 exceeds "
+            "safe limit %.3fmm^2 at current Z=%.1fmm; raise Z, "
+            "increase available WIDTH"
+            % (segment_cross_section, max_cross_section, current_z)
         )
-        self.segment_accel = (
-            params_grabber.accel / params_grabber.compression_factor
-        )
-        self.segment_length = (
-            params_grabber.length / params_grabber.compression_factor
-        )
-        self.segment_extrusion_length = (
-            params_grabber.extrusion_mm_per_mm(self.segment_line_width)
-            * self.segment_length
-        )
-        # purge needs to include the length of all the corner junctions
-        self.purge_length = self.segments * self.segment_length + (
-            (self.segments - 1) * self.corner_length
-        )
-        self.purge_extrusion_length = (
-            params_grabber.extrusion_mm_per_mm(self.segment_line_width)
-            * self.purge_length
-        )
-        # use the print speed as the travel speed
-        self.travel_speed: float = params_grabber.speed
-        self.extruder_temp: float = params_grabber.temp
-        self.original_pa = params_grabber.original_pa
 
     def get_junction_list(self, trapq_moves: list[TrapqMove]) -> list[Junction]:
         if self.segments < 2:
@@ -510,9 +549,7 @@ class PATestPattern:
             accel_start = segment_acceleration_move.print_time - t_zero
             segment_deceleration_move = trapq_moves[index + 3]
             decel_start = segment_deceleration_move.print_time - t_zero
-            junctions.append(
-                Junction(junction_index, accel_start, decel_start)
-            )
+            junctions.append(Junction(junction_index, accel_start, decel_start))
             junction_index += 1
         return junctions
 
@@ -565,19 +602,21 @@ class PATestPattern:
     def purge(self):
         self.set_acceleration(self.segment_accel)
         self.extruding_move(
-            self.purge_length,
+            self.purge_length * self.x_direction,
             0.0,
             self.purge_extrusion_length,
             self.segment_speed,
         )
-        self.travel_move(0.0, -2.0)
 
-    # emit the test pattern from right to left:
+    def step_move(self):
+        self.travel_move(0.0, 2.0 * self.y_direction)
+
+    # print the test pattern from right to left:
     def print_test_pattern(self):
         for segment in range(self.segments):
             # print one segment
             self.extruding_move(
-                -1.0 * self.segment_length,
+                self.segment_length * self.x_direction,
                 0.0,
                 self.segment_extrusion_length,
                 self.segment_speed,
@@ -585,7 +624,7 @@ class PATestPattern:
             if segment < self.segments - 1:
                 # print a small "stalling move"
                 self.extruding_move(
-                    -1.0 * self.corner_length,
+                    self.corner_length * self.x_direction,
                     0.0,
                     self.corner_extrusion_length,
                     self.corner_speed,
@@ -597,27 +636,16 @@ class Reporter:
         self,
         fit_results: list[FitResult],
         junctions: list[Junction],
-        time: list[float],
-        force: list[float],
-        trapq_moves: list[TrapqMove],
         output_path: str | None = None,
         analysis_error: str | None = None,
+        record: PADataRecord = None,
     ):
         self.fit_results = fit_results
         self.junctions: list[Junction] = junctions
-        self.time = time
-        self.force = force
-        self.trapq_moves = trapq_moves
         self.output_path: str | None = output_path
         self.analysis_error = analysis_error
-        self.record = PADataRecord(
-            fit_results=self.fit_results,
-            junctions=self.junctions,
-            time=self.time,
-            force=self.force,
-            trapq_moves=self.trapq_moves,
-            analysis_error=self.analysis_error,
-        )
+        self.record = record
+        self.pa: float | None = None
 
     def console_report(self, gcmd):
         if self.analysis_error is not None:
@@ -628,18 +656,15 @@ class Reporter:
         fitted = {result.junction_index for result in self.fit_results}
         rejected = [junc for junc in self.junctions if junc.index not in fitted]
         if len(rejected) > 1:
-            raise gcmd.error(
-                f"{len(rejected)} junctions failed to estimate, increase LENGTH"
-            )
+            raise gcmd.error(f"{len(rejected)} junctions failed to estimate")
         taus = [result.tau for result in self.fit_results]
         if not taus:
-            raise gcmd.error(
-                "No junctions produced a PA estimate, increase LENGTH"
-            )
+            raise gcmd.error("No junctions produced a PA estimate")
         min_tau = min(taus)
         max_tau = max(taus)
         range_tau = max_tau - min_tau
         avg_tau = float(np.mean(taus))
+        self.pa = avg_tau
         std_tau = float(np.std(taus))
         gcmd.respond_info(
             f"pressure advance results: minimum {min_tau:.4f}, "
@@ -652,13 +677,25 @@ class Reporter:
         if self.output_path is None:
             return
         base = Path(self.output_path).expanduser()
-        json_path = base.with_suffix(".json")
+        json_path = base.with_suffix(".jsonl")
         json_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with json_path.open("w", encoding="utf-8") as f:
-                json.dump(self.record.to_dict(), f, indent=2)
+            with json_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(self.record.to_dict()) + "\n")
+
         except Exception as ex:
             gcmd.respond_info(str(ex))
+
+    @classmethod
+    def adaptive_pa_report(cls, gcmd: GCodeCommand, reports: list[Reporter]):
+        if len(reports) < 2:
+            return
+        out: list[str] = ["| ADVANCE | FLOW RATE | ACCELERATION |"]
+        for report in reports:
+            record = report.record
+            out.append(f"{report.pa:.4f}, {record.flow_rate:.1f},"
+                       f" {record.accel:.0f}")
+        gcmd.respond_info("\n".join(out))
 
 
 class PressureAdvanceCalibration:
@@ -667,9 +704,9 @@ class PressureAdvanceCalibration:
         self._printer: Printer = self._config.get_printer()
         self._load_cell: LoadCell = load_cell
 
-    def calibrate(self, gcmd: GCodeCommand):
-        cmd_params: ParamsGrabber = ParamsGrabber(self._printer, gcmd)
-        test_pattern: PATestPattern = PATestPattern(self._printer, cmd_params)
+    def single_pattern(
+        self, gcmd: GCodeCommand, test_pattern: PATestPattern, output_path: str
+    ) -> Reporter:
         pa_analysis: PressureAdvanceAnalyzer = PressureAdvanceAnalyzer(
             self._printer, self._load_cell, gcmd.error
         )
@@ -695,14 +732,45 @@ class PressureAdvanceCalibration:
             fit_results = pa_analysis.estimate_pa(junctions)
         except Exception as ex:
             analysis_error = str(ex)
+        report: PADataRecord = PADataRecord(
+            speed=test_pattern.speed,
+            accel=test_pattern.accel,
+            flow_rate=test_pattern.flow_rate,
+            fit_results=fit_results,
+            junctions=junctions,
+            time=pa_analysis.time,
+            force=pa_analysis.force,
+            trapq_moves=trapq_moves,
+            analysis_error=analysis_error,
+        )
         reporter: Reporter = Reporter(
-            fit_results,
-            junctions,
-            pa_analysis.time,
-            pa_analysis.force,
-            trapq_moves,
-            cmd_params.output_path,
-            analysis_error,
+            fit_results, junctions, output_path, analysis_error, report
         )
         reporter.save_json(gcmd)
         reporter.console_report(gcmd)
+        return reporter
+
+    def calibrate(self, gcmd: GCodeCommand):
+        cmd_params: ParamsGrabber = ParamsGrabber(self._printer, gcmd)
+        patterns: list[PATestPattern] = []
+        x_direction = 1.0
+        for speed, accel in zip(cmd_params.speed, cmd_params.accel):
+            patterns.append(
+                PATestPattern(
+                    self._printer,
+                    cmd_params,
+                    speed,
+                    accel,
+                    gcmd.error,
+                    x_direction=x_direction,
+                )
+            )
+            x_direction = -1.0 * x_direction
+        reports: list[Reporter] = []
+        output_path: str = cmd_params.output_path
+        for i, test_pattern in enumerate(patterns):
+            report = self.single_pattern(gcmd, test_pattern, output_path)
+            reports.append(report)
+            if i < len(patterns) - 1:
+                test_pattern.step_move()
+        Reporter.adaptive_pa_report(gcmd, reports)
