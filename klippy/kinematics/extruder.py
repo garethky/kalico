@@ -72,7 +72,7 @@ class ExtruderStepper:
     def _handle_connect(self):
         toolhead = self.printer.lookup_object("toolhead")
         toolhead.register_step_generator(self.stepper.generate_steps)
-        self._set_pressure_advance(self.config_pa, self.config_smooth_time)
+        self.set_pressure_advance(self.config_pa, self.config_smooth_time)
 
     def get_status(self, eventtime):
         return {
@@ -108,7 +108,7 @@ class ExtruderStepper:
         _, rotation_dist = self.stepper.get_rotation_distance()
         return rotation_dist
 
-    def _set_pressure_advance(self, pressure_advance, smooth_time):
+    def set_pressure_advance(self, pressure_advance, smooth_time):
         old_smooth_time = self.pressure_advance_smooth_time
         if not self.pressure_advance:
             old_smooth_time = 0.0
@@ -146,7 +146,7 @@ class ExtruderStepper:
             minval=0.0,
             maxval=get_danger_options().override_pressure_advance_smooth_time_max,
         )
-        self._set_pressure_advance(pressure_advance, smooth_time)
+        self.set_pressure_advance(pressure_advance, smooth_time)
 
         if get_danger_options().log_pressure_advance_changes:
             msg = (

@@ -449,6 +449,7 @@ class PATestPattern:
         self._toolhead: ToolHead = printer.lookup_object("toolhead")
         self._gcode: GCodeDispatch = printer.lookup_object("gcode")
         self._heaters = printer.lookup_object("heaters")
+        self._extruder: PrinterExtruder = params_grabber.extruder
         self._extruder_heater: Heater = params_grabber.extruder.get_heater()
         self.layer_height: float = params_grabber.layer_height
         self.flow_multiplier: float = params_grabber.flow_multiplier
@@ -494,6 +495,7 @@ class PATestPattern:
         self.travel_speed: float = speed
         self.extruder_temp: float = params_grabber.temp
         self.original_pa = params_grabber.original_pa
+        self.original_smooth_time = params_grabber.original_smooth_time
 
     # the mm of filament to extrude for every mm of printed length
     def extrusion_mm_per_mm(self, line_width: float) -> float:
@@ -553,10 +555,8 @@ class PATestPattern:
             junction_index += 1
         return junctions
 
-    def set_pressure_advance(self, pa: float):
-        self._gcode.run_script_from_command(
-            f"SET_PRESSURE_ADVANCE ADVANCE={pa}"
-        )
+    def set_pressure_advance(self, advance: float):
+        self._extruder.extruder_stepper.set_pressure_advance(advance, self.original_smooth_time)
 
     def heat_extruder(self):
         self._heaters.set_temperature(
@@ -576,16 +576,16 @@ class PATestPattern:
         )
 
     def restore_gcode_state(self):
-        self._gcode.run_script_from_command(
-            "RESTORE_GCODE_STATE NAME=_PA_TEST_PATTERN"
-        )
-        if self.original_pa != 0.0:
-            self.set_pressure_advance(self.original_pa)
+        #self._gcode.run_script_from_command(
+        #    "RESTORE_GCODE_STATE NAME=_PA_TEST_PATTERN"
+        #)
+        #if self.original_pa != 0.0:
+         self.set_pressure_advance(self.original_pa)
 
     def setup_gcode_state(self):
-        self._gcode.run_script_from_command(
-            "SAVE_GCODE_STATE NAME=_PA_TEST_PATTERN"
-        )
+        #self._gcode.run_script_from_command(
+        #    "SAVE_GCODE_STATE NAME=_PA_TEST_PATTERN"
+        #)
         if self.original_pa != 0.0:
             self.set_pressure_advance(0.0)
         self._gcode.run_script_from_command("G91")
