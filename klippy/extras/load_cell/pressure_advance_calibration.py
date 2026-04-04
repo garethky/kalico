@@ -357,8 +357,12 @@ class ParamsGrabber:
         self.accel: list[float] = self._get_float_list(
             "ACCEL", above=0.0, maxval=self.toolhead.max_accel
         )
+        self.advance: list[float] = self._get_float_list("ADVANCE", above=0.0)
         if len(self.speed) != len(self.accel):
             raise gcmd.error("Speed and accel nees to be the same length")
+        # if the advance parameter is missing, initialize to 0.0's
+        if len(self.speed) != len(self.advance):
+            self.advance = [0.0] * len(self.speed)
         self.length: float = gcmd.get_float("LENGTH", 100.0, above=0.0)
         self.layer_height: float = gcmd.get_float(
             "LAYER_HEIGHT", 0.2, above=0.0
@@ -437,12 +441,14 @@ class PATestPattern:
         params_grabber: ParamsGrabber,
         speed: float,
         accel: float,
+        advance: float,
         cmd_err,
         x_direction: float = 1.0,
         y_direction: float = 1.0,
     ):
         self.speed: float = speed
         self.accel: float = accel
+        self.advance: float = advance
         self.x_direction: float = x_direction
         self.y_direction: float = y_direction
         self._printer: Printer = printer
@@ -576,18 +582,10 @@ class PATestPattern:
         )
 
     def restore_gcode_state(self):
-        #self._gcode.run_script_from_command(
-        #    "RESTORE_GCODE_STATE NAME=_PA_TEST_PATTERN"
-        #)
-        #if self.original_pa != 0.0:
-         self.set_pressure_advance(self.original_pa)
+        pass
 
     def setup_gcode_state(self):
-        #self._gcode.run_script_from_command(
-        #    "SAVE_GCODE_STATE NAME=_PA_TEST_PATTERN"
-        #)
-        if self.original_pa != 0.0:
-            self.set_pressure_advance(0.0)
+        self.set_pressure_advance(self.advance)
         self._gcode.run_script_from_command("G91")
         self._gcode.run_script_from_command("M83")
         self._gcode.run_script_from_command("G92 E0")
@@ -754,13 +752,15 @@ class PressureAdvanceCalibration:
         cmd_params: ParamsGrabber = ParamsGrabber(self._printer, gcmd)
         patterns: list[PATestPattern] = []
         x_direction = 1.0
-        for speed, accel in zip(cmd_params.speed, cmd_params.accel):
+        for speed, accel, advance in zip(cmd_params.speed, cmd_params.accel,
+                cmd_params.advance):
             patterns.append(
                 PATestPattern(
                     self._printer,
                     cmd_params,
                     speed,
                     accel,
+                    advance,
                     gcmd.error,
                     x_direction=x_direction,
                 )
