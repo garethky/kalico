@@ -99,6 +99,17 @@ class TrapqMove:
             start_z=float(move.start_z),
         )
 
+    def set_reference_time(self, reference_time: float) -> TrapqMove:
+        return TrapqMove(
+            print_time=self.print_time - reference_time,
+            move_t= self.move_t,
+            start_v=self.start_v,
+            accel=self.accel,
+            start_x=self.start_x,
+            start_y=self.start_y,
+            start_z=self.start_z,
+        )
+
     @property
     def end_time(self) -> float:
         return self.print_time + self.move_t
@@ -152,6 +163,7 @@ class TrapqMove:
 class PADataRecord:
     speed: float
     accel: float
+    advance: float
     flow_rate: float
     time: list[float]
     force: list[float]
@@ -237,7 +249,11 @@ class PressureAdvanceAnalyzer:
         for sample in raw_samples:
             self.time.append(round(sample[0] - self.t_zero, 6))
             self.force.append(sample[1])
-        return trapq_moves
+        # correct the trapq to also reference t_zero
+        corrected_moves: list[TrapqMove] = []
+        for move in trapq_moves:
+            corrected_moves.append(move.set_reference_time(self.t_zero))
+        return corrected_moves
 
     # make force go up for extrusion pressure
     def normalize_force_polarity(self, junctions: list[Junction]):
@@ -357,12 +373,20 @@ class ParamsGrabber:
         self.accel: list[float] = self._get_float_list(
             "ACCEL", above=0.0, maxval=self.toolhead.max_accel
         )
-        self.advance: list[float] = self._get_float_list("ADVANCE", above=0.0)
+        self.advance: list[float] = self._get_float_list("ADVANCE", minval=0.0)
         if len(self.speed) != len(self.accel):
-            raise gcmd.error("Speed and accel nees to be the same length")
+            raise gcmd.error(
+                f"Speed {len(self.speed)} and accel {len(self.accel)} "
+                f"need to be the same length"
+            )
         # if the advance parameter is missing, initialize to 0.0's
-        if len(self.speed) != len(self.advance):
+        if self.advance is None:
             self.advance = [0.0] * len(self.speed)
+        if len(self.speed) != len(self.advance):
+            raise gcmd.error(
+                f"Speed {len(self.speed)} and advance {len(self.advance)} "
+                f"need to be the same length"
+            )
         self.length: float = gcmd.get_float("LENGTH", 100.0, above=0.0)
         self.layer_height: float = gcmd.get_float(
             "LAYER_HEIGHT", 0.2, above=0.0
@@ -386,7 +410,7 @@ class ParamsGrabber:
         self.output_path = gcmd.get("OUTPUT_PATH", default=None)
 
     def _get_float_list(
-        self, name: str, above: float = None, maxval: float = None
+        self, name: str, above: float = None, maxval: float = None, minval: float = None
     ) -> list[float]:
         value = self.gcmd.get(name, default="")
         # Return an empty list for empty value
@@ -405,6 +429,10 @@ class ParamsGrabber:
             if above is not None and val <= above:
                 raise self.gcmd.error(
                     f"{name} value {val} must be above {above}"
+                )
+            if minval is not None and val < minval:
+                raise self.gcmd.error(
+                    f"{name} value {val} must be at least {minval}"
                 )
             if maxval is not None and val > maxval:
                 raise self.gcmd.error(
@@ -654,10 +682,11 @@ class Reporter:
         fitted = {result.junction_index for result in self.fit_results}
         rejected = [junc for junc in self.junctions if junc.index not in fitted]
         if len(rejected) > 1:
-            raise gcmd.error(f"{len(rejected)} junctions failed to estimate")
+            gcmd.respond_info(f"{len(rejected)} junctions failed to estimate")
         taus = [result.tau for result in self.fit_results]
         if not taus:
-            raise gcmd.error("No junctions produced a PA estimate")
+            gcmd.respond_info("No junctions produced a PA estimate")
+            return
         min_tau = min(taus)
         max_tau = max(taus)
         range_tau = max_tau - min_tau
@@ -711,7 +740,6 @@ class PressureAdvanceCalibration:
         trapq_moves: list[TrapqMove]
         try:
             test_pattern.setup_gcode_state()
-            test_pattern.heat_extruder()
             test_pattern.purge()
             pa_analysis.start_capture()
             test_pattern.print_test_pattern()
@@ -733,6 +761,7 @@ class PressureAdvanceCalibration:
         report: PADataRecord = PADataRecord(
             speed=test_pattern.speed,
             accel=test_pattern.accel,
+            advance=test_pattern.advance,
             flow_rate=test_pattern.flow_rate,
             fit_results=fit_results,
             junctions=junctions,
@@ -768,6 +797,7 @@ class PressureAdvanceCalibration:
             x_direction = -1.0 * x_direction
         reports: list[Reporter] = []
         output_path: str = cmd_params.output_path
+        patterns[0].heat_extruder()  # heat only once
         for i, test_pattern in enumerate(patterns):
             report = self.single_pattern(gcmd, test_pattern, output_path)
             reports.append(report)
