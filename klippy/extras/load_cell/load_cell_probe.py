@@ -977,6 +977,9 @@ class LoadCellEndstopWrapper:
     def get_position_endstop(self):
         return self._z_offset
 
+    def get_probe_axes(self):
+        return "z"
+
     def get_status(self, eventtime):
         status = self._tapping_move.get_status(eventtime)
         status.update(self._tapping_move.get_status(eventtime))

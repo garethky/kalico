@@ -432,6 +432,12 @@ class PrinterProbe:
     def get_offsets(self):
         return self.x_offset, self.y_offset, self.z_offset
 
+    def get_probe_axes(self):
+        get_probe_axes = getattr(self.mcu_probe, "get_probe_axes", None)
+        if get_probe_axes is None:
+            return "z"
+        return get_probe_axes()
+
     def probing_move(
         self, speed, gcmd: GCodeCommand
     ) -> tuple[list[float], bool]:
@@ -813,6 +819,9 @@ class ProbeEndstopWrapper:
     ) -> Union[list[float], tuple[list[float], bool]]:
         phoming = self.printer.lookup_object("homing")
         return phoming.probing_move(self, pos, speed)
+
+    def get_probe_axes(self):
+        return "z"
 
     def probe_prepare(self, hmove):
         if self.multi == "OFF" or self.multi == "FIRST":
