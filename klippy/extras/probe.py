@@ -438,15 +438,69 @@ class PrinterProbe:
             return "z"
         return get_probe_axes()
 
-    def probing_move(
-        self, speed, gcmd: GCodeCommand
-    ) -> tuple[list[float], bool]:
+    def _get_explicit_probe_axes(self, gcmd: GCodeCommand) -> list[int]:
+        params = gcmd.get_command_parameters()
+        return [i for i, axis in enumerate("XYZ") if axis in params]
+
+    def _get_probe_target(
+        self,
+        gcmd: GCodeCommand,
+        curpos: list[float],
+        allow_explicit_target: bool,
+    ) -> tuple[list[float], list[int]]:
+        explicit_axes = []
+        if allow_explicit_target:
+            explicit_axes = self._get_explicit_probe_axes(gcmd)
+        pos = list(curpos)
+        if not explicit_axes:
+            pos[2] = self.z_position
+            return pos, explicit_axes
+        for axis in explicit_axes:
+            pos[axis] = gcmd.get_float("XYZ"[axis], None)
+        return pos, explicit_axes
+
+    def _check_probe_target(
+        self,
+        gcmd: GCodeCommand,
+        curpos: list[float],
+        pos: list[float],
+        explicit_axes: list[int],
+    ) -> None:
+        if explicit_axes:
+            supported_axes = self.get_probe_axes().lower()
+            unsupported = [
+                "XYZ"[axis]
+                for axis in explicit_axes
+                if "xyz"[axis] not in supported_axes
+            ]
+            if unsupported:
+                raise gcmd.error(
+                    "Probe does not support explicit %s movement"
+                    % (", ".join(unsupported),)
+                )
+            moving_axes = [
+                axis for axis in explicit_axes if pos[axis] != curpos[axis]
+            ]
+        else:
+            moving_axes = [2]
         toolhead = self.printer.lookup_object("toolhead")
         curtime = self.printer.get_reactor().monotonic()
-        if "z" not in toolhead.get_status(curtime)["homed_axes"]:
+        homed_axes = toolhead.get_status(curtime)["homed_axes"]
+        if any("xyz"[axis] not in homed_axes for axis in moving_axes):
             raise self.printer.command_error("Must home before probe")
-        pos = toolhead.get_position()
-        pos[2] = self.z_position
+
+    def probing_move(
+        self,
+        speed,
+        gcmd: GCodeCommand,
+        allow_explicit_target: bool = False,
+    ) -> tuple[list[float], bool]:
+        toolhead = self.printer.lookup_object("toolhead")
+        curpos = toolhead.get_position()
+        pos, explicit_axes = self._get_probe_target(
+            gcmd, curpos, allow_explicit_target
+        )
+        self._check_probe_target(gcmd, curpos, pos, explicit_axes)
         try:
             result = self.mcu_probe.probing_move(pos, speed, gcmd)
         except self.printer.command_error as e:
@@ -463,22 +517,31 @@ class PrinterProbe:
             return result, True
 
     def _probe(
-        self, speed, gcmd: GCodeCommand
+        self,
+        speed,
+        gcmd: GCodeCommand,
+        allow_explicit_target: bool = False,
     ) -> tuple[list[float], Optional[bool]]:
         toolhead = self.printer.lookup_object("toolhead")
         pos = toolhead.get_position()
-        epos, is_good = self.probing_move(speed, gcmd)
-        # get z compensation from axis_twist_compensation
-        axis_twist_compensation = self.printer.lookup_object(
-            "axis_twist_compensation", None
+        explicit_axes = []
+        if allow_explicit_target:
+            explicit_axes = self._get_explicit_probe_axes(gcmd)
+        epos, is_good = self.probing_move(
+            speed, gcmd, allow_explicit_target
         )
-        z_compensation = 0
-        if axis_twist_compensation is not None:
-            z_compensation = axis_twist_compensation.get_z_compensation_value(
-                pos
+        if 0 not in explicit_axes and 1 not in explicit_axes:
+            # get z compensation from axis_twist_compensation
+            axis_twist_compensation = self.printer.lookup_object(
+                "axis_twist_compensation", None
             )
-        # add z compensation to probe position
-        epos[2] += z_compensation
+            z_compensation = 0
+            if axis_twist_compensation is not None:
+                z_compensation = (
+                    axis_twist_compensation.get_z_compensation_value(pos)
+                )
+            # add z compensation to probe position
+            epos[2] += z_compensation
         self.gcode.respond_info(
             "probe at %.3f,%.3f is z=%.6f" % (epos[0], epos[1], epos[2])
         )
@@ -507,10 +570,14 @@ class PrinterProbe:
         return False
 
     def _discard_first_result(
-        self, speed: float, retry_session: RetrySession, gcmd: GCodeCommand
+        self,
+        speed: float,
+        retry_session: RetrySession,
+        gcmd: GCodeCommand,
+        allow_explicit_target: bool = False,
     ):
         if self._drop_first_result:
-            pos, is_good = self._probe(speed, gcmd)
+            pos, is_good = self._probe(speed, gcmd, allow_explicit_target)
             # marks the initial probing location as fouled if needed
             retry_session.evaluate_probe(is_good)
             self._retract(gcmd)
@@ -526,14 +593,21 @@ class PrinterProbe:
         self._move([None, None, pos[2] + sample_retract_dist], lift_speed)
 
     def _run_probe_with_retries(
-        self, speed: float, retry_session: RetrySession, gcmd: GCodeCommand
+        self,
+        speed: float,
+        retry_session: RetrySession,
+        gcmd: GCodeCommand,
+        return_trigger_pos: bool = False,
+        allow_explicit_target: bool = False,
     ) -> list[float]:
         """Probe for a single good result with retries based on strategy"""
         while retry_session.can_retry():
             self._move(retry_session.get_probe_position(), self.retry_speed)
             # Probe position
-            pos, is_good = self._probe(speed, gcmd)
+            pos, is_good = self._probe(speed, gcmd, allow_explicit_target)
             if retry_session.evaluate_probe(is_good):
+                if return_trigger_pos:
+                    return pos
                 # return the x/y of the original requested location
                 return list(retry_session.get_position() + (pos[2],))
             # Probe was rejected, retry
@@ -545,7 +619,10 @@ class PrinterProbe:
         )
 
     def run_probe(
-        self, gcmd: GCodeCommand, retry_session: Optional[RetrySession] = None
+        self,
+        gcmd: GCodeCommand,
+        retry_session: Optional[RetrySession] = None,
+        allow_explicit_target: bool = False,
     ) -> list[float]:
         speed = gcmd.get_float("PROBE_SPEED", self.speed, above=0.0)
         sample_count = gcmd.get_int("SAMPLES", self.sample_count, minval=1)
@@ -556,6 +633,9 @@ class PrinterProbe:
             "SAMPLES_TOLERANCE_RETRIES", self.samples_retries, minval=0
         )
         samples_result = gcmd.get("SAMPLES_RESULT", self.samples_result)
+        explicit_axes = []
+        if allow_explicit_target:
+            explicit_axes = self._get_explicit_probe_axes(gcmd)
         must_notify_multi_probe = not self.multi_probe_pending
         if must_notify_multi_probe:
             self.multi_probe_begin(always_restore_toolhead=True)
@@ -572,10 +652,18 @@ class PrinterProbe:
         request_pos = toolhead.get_position()[:2]
         retries = 0
         positions = []
-        self._discard_first_result(speed, local_retry_session, gcmd)
+        self._discard_first_result(
+            speed, local_retry_session, gcmd, allow_explicit_target
+        )
         while len(positions) < sample_count:
             # Probe position with retries
-            pos = self._run_probe_with_retries(speed, local_retry_session, gcmd)
+            pos = self._run_probe_with_retries(
+                speed,
+                local_retry_session,
+                gcmd,
+                bool(explicit_axes),
+                allow_explicit_target,
+            )
             positions.append(pos)
             # Check samples tolerance
             z_positions = [p[2] for p in positions]
@@ -597,10 +685,10 @@ class PrinterProbe:
             return self._calc_median(positions)
         return self._calc_mean(positions)
 
-    cmd_PROBE_help = "Probe Z-height at current XY position"
+    cmd_PROBE_help = "Probe Z-height or toward an explicit X/Y/Z target"
 
     def cmd_PROBE(self, gcmd: GCodeCommand):
-        pos = self.run_probe(gcmd)
+        pos = self.run_probe(gcmd, allow_explicit_target=True)
         gcmd.respond_info("Result is z=%.6f" % (pos[2],))
         self.last_z_result = pos[2]
         home = gcmd.get("HOME", default="").lower()
