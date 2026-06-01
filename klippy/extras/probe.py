@@ -626,23 +626,45 @@ class PrinterProbe:
         gcmd: GCodeCommand,
         allow_explicit_target: bool = False,
         probe_target: Optional[tuple[list[float], list[int]]] = None,
+        probe_start: Optional[list[float]] = None,
     ):
         if self._drop_first_result:
+            explicit_target = probe_target is not None and bool(probe_target[1])
+            if explicit_target and probe_start is not None:
+                self._move(probe_start, self.retry_speed)
             pos, is_good = self._probe(
                 speed, gcmd, allow_explicit_target, probe_target
             )
             # marks the initial probing location as fouled if needed
             retry_session.evaluate_probe(is_good)
-            self._retract(gcmd)
+            self._retract(gcmd, probe_target, probe_start)
 
-    # Raise the toolhead at the current x/y location
-    def _retract(self, gcmd: GCodeCommand):
+    # Raise the toolhead at the current x/y location, or back off along an
+    # explicit probe approach vector.
+    def _retract(
+        self,
+        gcmd: GCodeCommand,
+        probe_target: Optional[tuple[list[float], list[int]]] = None,
+        probe_start: Optional[list[float]] = None,
+    ):
         sample_retract_dist = gcmd.get_float(
             "SAMPLE_RETRACT_DIST", self.sample_retract_dist, above=0.0
         )
         lift_speed = self.get_lift_speed(gcmd)
         toolhead: ToolHead = self.printer.lookup_object("toolhead")
         pos = toolhead.get_position()
+        explicit_target = probe_target is not None and bool(probe_target[1])
+        if explicit_target and probe_start is not None:
+            target_pos = probe_target[0]
+            vector = [target_pos[i] - probe_start[i] for i in range(3)]
+            length = math.sqrt(sum([axis * axis for axis in vector]))
+            if length == 0.0:
+                raise gcmd.error("Explicit probe target must move")
+            retract_pos = list(pos)
+            for i in range(3):
+                retract_pos[i] -= vector[i] / length * sample_retract_dist
+            self._move(retract_pos, lift_speed)
+            return
         self._move([None, None, pos[2] + sample_retract_dist], lift_speed)
 
     def _run_probe_with_retries(
@@ -653,10 +675,15 @@ class PrinterProbe:
         return_trigger_pos: bool = False,
         allow_explicit_target: bool = False,
         probe_target: Optional[tuple[list[float], list[int]]] = None,
+        probe_start: Optional[list[float]] = None,
     ) -> list[float]:
         """Probe for a single good result with retries based on strategy"""
+        explicit_target = probe_target is not None and bool(probe_target[1])
         while retry_session.can_retry():
-            self._move(retry_session.get_probe_position(), self.retry_speed)
+            if explicit_target and probe_start is not None:
+                self._move(probe_start, self.retry_speed)
+            else:
+                self._move(retry_session.get_probe_position(), self.retry_speed)
             # Probe position
             pos, is_good = self._probe(
                 speed, gcmd, allow_explicit_target, probe_target
@@ -667,7 +694,7 @@ class PrinterProbe:
                 # return the x/y of the original requested location
                 return list(retry_session.get_position() + (pos[2],))
             # Probe was rejected, retry
-            self._retract(gcmd)
+            self._retract(gcmd, probe_target, probe_start)
             retry_session.scrub_nozzle()
         attempts = retry_session.get_bad_probe_count()
         raise gcmd.error(
@@ -689,9 +716,23 @@ class PrinterProbe:
             "SAMPLES_TOLERANCE_RETRIES", self.samples_retries, minval=0
         )
         samples_result = gcmd.get("SAMPLES_RESULT", self.samples_result)
+        toolhead = self.printer.lookup_object("toolhead")
+        probe_start = list(toolhead.get_position())
         explicit_axes = []
+        probe_target = None
         if allow_explicit_target:
             explicit_axes = self._get_explicit_probe_axes(gcmd)
+            if explicit_axes:
+                target_pos, explicit_axes = self._get_probe_target(
+                    gcmd, probe_start, True
+                )
+                self._check_probe_target(
+                    gcmd, probe_start, target_pos, explicit_axes
+                )
+                vector = [target_pos[i] - probe_start[i] for i in range(3)]
+                if sum([axis * axis for axis in vector]) == 0.0:
+                    raise gcmd.error("Explicit probe target must move")
+                probe_target = (target_pos, explicit_axes)
         must_notify_multi_probe = not self.multi_probe_pending
         if must_notify_multi_probe:
             self.multi_probe_begin(always_restore_toolhead=True)
@@ -699,17 +740,18 @@ class PrinterProbe:
         if retry_session is None:
             local_retry_session = self.retry_session
             self.retry_session.start(gcmd)
-            toolhead = self.printer.lookup_object("toolhead")
-            self.retry_session.set_position(toolhead.get_position())
+            self.retry_session.set_position(probe_start)
         else:
             local_retry_session: RetrySession = retry_session
-        # save X and Y position
-        toolhead = self.printer.lookup_object("toolhead")
-        request_pos = toolhead.get_position()[:2]
         retries = 0
         positions = []
         self._discard_first_result(
-            speed, local_retry_session, gcmd, allow_explicit_target
+            speed,
+            local_retry_session,
+            gcmd,
+            allow_explicit_target,
+            probe_target,
+            probe_start,
         )
         while len(positions) < sample_count:
             # Probe position with retries
@@ -719,6 +761,8 @@ class PrinterProbe:
                 gcmd,
                 bool(explicit_axes),
                 allow_explicit_target,
+                probe_target,
+                probe_start,
             )
             positions.append(pos)
             # Check samples tolerance
@@ -731,7 +775,7 @@ class PrinterProbe:
                 positions = []
             # Retract
             if len(positions) < sample_count:
-                self._retract(gcmd)
+                self._retract(gcmd, probe_target, probe_start)
         if must_notify_multi_probe:
             self.multi_probe_end()
         if retry_session is None:
@@ -781,7 +825,7 @@ class PrinterProbe:
             "SAMPLE_RETRACT_DIST", self.sample_retract_dist, above=0.0
         )
         toolhead = self.printer.lookup_object("toolhead")
-        start_pos = toolhead.get_position()
+        start_pos = list(toolhead.get_position())
         explicit_axes = self._get_explicit_probe_axes(gcmd)
         probe_target = None
         if explicit_axes:
@@ -841,6 +885,7 @@ class PrinterProbe:
             gcmd,
             use_explicit_target,
             probe_target,
+            start_pos,
         )
         while len(positions) < sample_count:
             # Probe position
@@ -851,10 +896,11 @@ class PrinterProbe:
                 use_explicit_target,
                 use_explicit_target,
                 probe_target,
+                start_pos,
             )
             positions.append(pos)
             # Retract
-            self._retract(gcmd)
+            self._retract(gcmd, probe_target, start_pos)
         self.multi_probe_end()
         self.retry_session.end()
         if use_explicit_target:
