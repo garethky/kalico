@@ -641,6 +641,7 @@ class LoadCellPrimitives:
         self._dispatch = mcu_load_cell_probe.get_dispatch()
         # internal state tracking
         self._last_trigger_time = 0
+        self._active_steppers = None
 
     def get_mcu(self):
         return self._mcu_load_cell_probe.get_mcu()
@@ -687,16 +688,29 @@ class LoadCellPrimitives:
             error = "Load Cell Probe Error: unknown reason code %i" % (res,)
             if res in self.ERROR_MAP:
                 error = self.ERROR_MAP[res]
+            self._active_steppers = None
             raise self._printer.command_error(error)
         if res != mcu.MCU_trsync.REASON_ENDSTOP_HIT:
+            self._active_steppers = None
             return 0.0
+        self._active_steppers = None
         return self._last_trigger_time
 
     def add_stepper(self, stepper):
         self._dispatch.add_stepper(stepper)
 
     def get_steppers(self):
+        if self._active_steppers is not None:
+            return list(self._active_steppers)
         return self.get_dispatch().get_steppers()
+
+    def _set_active_steppers(self, start_pos, end_pos):
+        self._active_steppers = [
+            stepper
+            for stepper in self.get_dispatch().get_steppers()
+            if stepper.calc_position_from_coord(start_pos)
+            != stepper.calc_position_from_coord(end_pos)
+        ]
 
     def query_endstop(self, print_time):
         return False
@@ -706,16 +720,27 @@ class LoadCellPrimitives:
     def probing_move(
         self, mcu_probe, pos, speed, gcmd
     ) -> tuple[list[float], LoadCellSampleCollector]:
-        # tare the sensor just before probing
-        self.tare(gcmd)
-        # start collector after tare samples are consumed
-        collector = self._start_collector()
-        # do homing move
-        printer_homing: PrinterHoming = self._printer.lookup_object("homing")
+        collector = None
         try:
+            toolhead = self._printer.lookup_object("toolhead")
+            self._set_active_steppers(toolhead.get_position(), pos)
+            if not self._active_steppers:
+                raise self._printer.command_error(
+                    "Load Cell Probe Error: probe move has no active steppers"
+                )
+            # tare the sensor just before probing
+            self.tare(gcmd)
+            # start collector after tare samples are consumed
+            collector = self._start_collector()
+            # do homing move
+            printer_homing: PrinterHoming = self._printer.lookup_object(
+                "homing"
+            )
             return printer_homing.probing_move(mcu_probe, pos, speed), collector
         except self._printer.command_error:
-            collector.stop_collecting()
+            self._active_steppers = None
+            if collector is not None:
+                collector.stop_collecting()
             raise
 
     # Wait for the MCU to trigger with no movement
@@ -723,6 +748,7 @@ class LoadCellPrimitives:
         self.tare(gcmd)
         toolhead = self._printer.lookup_object("toolhead")
         print_time = toolhead.get_last_move_time()
+        self._active_steppers = []
         self.home_start(print_time)
         return self.home_wait(print_time + timeout)
 
@@ -796,11 +822,14 @@ class TappingMove:
         return self._load_cell_primitives.home_start(print_time)
 
     # Perform the pullback move and returns the time when the move will end
-    def pullback_move(self, gcmd):
+    def pullback_move(self, probe_direction, gcmd):
         toolhead = self._printer.lookup_object("toolhead")
-        pullback_pos = toolhead.get_position()
-        pullback_pos[2] += self._config_helper.get_pullback_distance(gcmd)
-        pos = [None, None, pullback_pos[2]]
+        pullback_pos = list(toolhead.get_position())
+        pullback_distance = self._config_helper.get_pullback_distance(gcmd)
+        pos = [
+            pullback_pos[i] - probe_direction[i] * pullback_distance
+            for i in range(3)
+        ]
         toolhead.manual_move(pos, self._config_helper.get_pullback_speed(gcmd))
         toolhead.flush_step_generation()
         pullback_end = toolhead.get_last_move_time()
@@ -809,6 +838,15 @@ class TappingMove:
     # perform a complete tapping cycle
     def probing_move(self, pos, speed, gcmd) -> tuple[list[float], bool]:
         self._is_last_result_valid = False
+        toolhead = self._printer.lookup_object("toolhead")
+        probe_start = list(toolhead.get_position()[:3])
+        probe_target = list(pos[:3])
+        probe_vector = [probe_target[i] - probe_start[i] for i in range(3)]
+        probe_distance = math.sqrt(sum([v * v for v in probe_vector]))
+        if probe_distance == 0.0:
+            error = gcmd.error if gcmd else self._printer.command_error
+            raise error("Load Cell Probe Error: probe vector is zero length")
+        probe_direction = [v / probe_distance for v in probe_vector]
         # do the probing/homing move
         epos, collector = self._load_cell_primitives.probing_move(
             self, pos, speed, gcmd
@@ -819,7 +857,7 @@ class TappingMove:
             self._is_last_result_valid = True
             return epos, self._is_last_result_valid
         # do the pullback move
-        pullback_end_time = self.pullback_move(gcmd)
+        pullback_end_time = self.pullback_move(probe_direction, gcmd)
         # collect samples from the tap
         results = collector.collect_until(pullback_end_time)
         # calculate how long we waited to get the data
@@ -835,9 +873,9 @@ class TappingMove:
         )
         self._last_analysis = tap_analysis
         self._is_last_result_valid = tap_analysis.is_valid()
-        # if the tap is valid, replace the z position with the calculated one
+        # if the tap is valid, replace the position with the calculated one
         if self._is_last_result_valid:
-            epos[2] = tap_analysis.get_tap_pos()[2]
+            epos[:3] = tap_analysis.get_tap_pos()[:3]
         return epos, self._is_last_result_valid
 
     def get_status(self, eventtime):
@@ -970,15 +1008,14 @@ class LoadCellEndstopWrapper:
     def _handle_mcu_identify(self):
         kin = self._printer.lookup_object("toolhead").get_kinematics()
         for stepper in kin.get_steppers():
-            if stepper.is_active_axis("z"):
-                self.add_stepper(stepper)
+            self.add_stepper(stepper)
 
     # Interface for ProbeEndstopWrapper
     def get_position_endstop(self):
         return self._z_offset
 
     def get_probe_axes(self):
-        return "z"
+        return "xyz"
 
     def get_status(self, eventtime):
         status = self._tapping_move.get_status(eventtime)

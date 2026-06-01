@@ -449,10 +449,22 @@ class TapAnalysis:
                 "COASTING_MOVE_ACCELERATION",
                 "Probing move is accelerating/decelerating which is invalid",
             )
-        # how long did it take to get to end_z?
-        homing_move.move_t = abs(
-            (halt_move.start_z - homing_move.start_z) / homing_move.start_v
+        homing_dir = (homing_move.x_r, homing_move.y_r, homing_move.z_r)
+        homing_dir_len = math.sqrt(sum([r * r for r in homing_dir]))
+        if homing_dir_len == 0.0 or homing_move.start_v == 0.0:
+            raise TapValidationError(
+                "HOMING_MOVE_VECTOR_INVALID",
+                "Probing move direction vector is invalid",
+            )
+        delta = (
+            halt_move.start_x - homing_move.start_x,
+            halt_move.start_y - homing_move.start_y,
+            halt_move.start_z - homing_move.start_z,
         )
+        distance = sum(
+            [delta[i] * homing_dir[i] / homing_dir_len for i in range(3)]
+        )
+        homing_move.move_t = abs(distance / homing_move.start_v)
         return homing_move.print_time + homing_move.move_t
 
     # extract and save TrapQueue moves
