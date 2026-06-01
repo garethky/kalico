@@ -478,9 +478,7 @@ class PrinterProbe:
                     "Probe does not support explicit %s movement"
                     % (", ".join(unsupported),)
                 )
-            moving_axes = [
-                axis for axis in explicit_axes if pos[axis] != curpos[axis]
-            ]
+            moving_axes = [axis for axis in range(3) if pos[axis] != curpos[axis]]
         else:
             moving_axes = [2]
         toolhead = self.printer.lookup_object("toolhead")
@@ -494,12 +492,18 @@ class PrinterProbe:
         speed,
         gcmd: GCodeCommand,
         allow_explicit_target: bool = False,
+        probe_target: Optional[tuple[list[float], list[int]]] = None,
     ) -> tuple[list[float], bool]:
         toolhead = self.printer.lookup_object("toolhead")
         curpos = toolhead.get_position()
-        pos, explicit_axes = self._get_probe_target(
-            gcmd, curpos, allow_explicit_target
-        )
+        if probe_target is None:
+            pos, explicit_axes = self._get_probe_target(
+                gcmd, curpos, allow_explicit_target
+            )
+        else:
+            pos, explicit_axes = probe_target
+            pos = list(pos)
+            explicit_axes = list(explicit_axes)
         self._check_probe_target(gcmd, curpos, pos, explicit_axes)
         try:
             result = self.mcu_probe.probing_move(pos, speed, gcmd)
@@ -521,14 +525,17 @@ class PrinterProbe:
         speed,
         gcmd: GCodeCommand,
         allow_explicit_target: bool = False,
+        probe_target: Optional[tuple[list[float], list[int]]] = None,
     ) -> tuple[list[float], Optional[bool]]:
         toolhead = self.printer.lookup_object("toolhead")
         pos = toolhead.get_position()
         explicit_axes = []
-        if allow_explicit_target:
+        if probe_target is not None:
+            explicit_axes = list(probe_target[1])
+        elif allow_explicit_target:
             explicit_axes = self._get_explicit_probe_axes(gcmd)
         epos, is_good = self.probing_move(
-            speed, gcmd, allow_explicit_target
+            speed, gcmd, allow_explicit_target, probe_target
         )
         if 0 not in explicit_axes and 1 not in explicit_axes:
             # get z compensation from axis_twist_compensation
@@ -563,6 +570,49 @@ class PrinterProbe:
         # even number of samples
         return self._calc_mean(z_sorted[middle - 1 : middle + 1])
 
+    def _calc_probe_accuracy_stats(self, values: list[float]) -> dict[str, float]:
+        count = float(len(values))
+        max_value = max(values)
+        min_value = min(values)
+        avg_value = sum(values) / count
+        sorted_values = sorted(values)
+        middle = len(values) // 2
+        if (len(values) & 1) == 1:
+            median = sorted_values[middle]
+        else:
+            median = (sorted_values[middle - 1] + sorted_values[middle]) / 2.0
+        deviation_sum = sum([pow(value - avg_value, 2.0) for value in values])
+        delta_sum = 0.0
+        for i in range(1, len(values)):
+            delta_sum += abs(values[i] - values[i - 1])
+        avg_delta = delta_sum / (len(values) - 1)
+        return {
+            "max": max_value,
+            "min": min_value,
+            "range": max_value - min_value,
+            "avg": avg_value,
+            "median": median,
+            "sigma": (deviation_sum / count) ** 0.5,
+            "avg_delta": avg_delta,
+        }
+
+    def _get_probe_accuracy_projection_values(
+        self,
+        positions: list[list[float]],
+        start_pos: list[float],
+        target_pos: list[float],
+        gcmd: GCodeCommand,
+    ) -> list[float]:
+        vector = [target_pos[i] - start_pos[i] for i in range(3)]
+        length = math.sqrt(sum([axis * axis for axis in vector]))
+        if length == 0.0:
+            raise gcmd.error("Explicit PROBE_ACCURACY target must move")
+        unit = [axis / length for axis in vector]
+        return [
+            sum([(pos[i] - start_pos[i]) * unit[i] for i in range(3)])
+            for pos in positions
+        ]
+
     @property
     def _drop_first_result(self):
         if hasattr(self, "drop_first_result"):
@@ -575,9 +625,12 @@ class PrinterProbe:
         retry_session: RetrySession,
         gcmd: GCodeCommand,
         allow_explicit_target: bool = False,
+        probe_target: Optional[tuple[list[float], list[int]]] = None,
     ):
         if self._drop_first_result:
-            pos, is_good = self._probe(speed, gcmd, allow_explicit_target)
+            pos, is_good = self._probe(
+                speed, gcmd, allow_explicit_target, probe_target
+            )
             # marks the initial probing location as fouled if needed
             retry_session.evaluate_probe(is_good)
             self._retract(gcmd)
@@ -599,12 +652,15 @@ class PrinterProbe:
         gcmd: GCodeCommand,
         return_trigger_pos: bool = False,
         allow_explicit_target: bool = False,
+        probe_target: Optional[tuple[list[float], list[int]]] = None,
     ) -> list[float]:
         """Probe for a single good result with retries based on strategy"""
         while retry_session.can_retry():
             self._move(retry_session.get_probe_position(), self.retry_speed)
             # Probe position
-            pos, is_good = self._probe(speed, gcmd, allow_explicit_target)
+            pos, is_good = self._probe(
+                speed, gcmd, allow_explicit_target, probe_target
+            )
             if retry_session.evaluate_probe(is_good):
                 if return_trigger_pos:
                     return pos
@@ -715,7 +771,7 @@ class PrinterProbe:
             "last_z_result": self.last_z_result,
         }
 
-    cmd_PROBE_ACCURACY_help = "Probe Z-height accuracy at current XY position"
+    cmd_PROBE_ACCURACY_help = "Probe accuracy at current position or explicit X/Y/Z target"
 
     def cmd_PROBE_ACCURACY(self, gcmd: GCodeCommand):
         speed = gcmd.get_float("PROBE_SPEED", self.speed, above=0.0)
@@ -725,38 +781,102 @@ class PrinterProbe:
             "SAMPLE_RETRACT_DIST", self.sample_retract_dist, above=0.0
         )
         toolhead = self.printer.lookup_object("toolhead")
-        pos = toolhead.get_position()
-        gcmd.respond_info(
-            "PROBE_ACCURACY at X:%.3f Y:%.3f Z:%.3f"
-            " (samples=%d retract=%.3f"
-            " speed=%.1f lift_speed=%.1f)\n"
-            % (
-                pos[0],
-                pos[1],
-                pos[2],
-                sample_count,
-                sample_retract_dist,
-                speed,
-                lift_speed,
+        start_pos = toolhead.get_position()
+        explicit_axes = self._get_explicit_probe_axes(gcmd)
+        probe_target = None
+        if explicit_axes:
+            target_pos, explicit_axes = self._get_probe_target(
+                gcmd, start_pos, True
             )
-        )
+            self._check_probe_target(gcmd, start_pos, target_pos, explicit_axes)
+            vector = [target_pos[i] - start_pos[i] for i in range(3)]
+            if sum([axis * axis for axis in vector]) == 0.0:
+                raise gcmd.error("Explicit PROBE_ACCURACY target must move")
+            probe_target = (target_pos, explicit_axes)
+            gcmd.respond_info(
+                "PROBE_ACCURACY from X:%.3f Y:%.3f Z:%.3f"
+                " toward X:%.3f Y:%.3f Z:%.3f"
+                " (samples=%d retract=%.3f"
+                " speed=%.1f lift_speed=%.1f)\n"
+                % (
+                    start_pos[0],
+                    start_pos[1],
+                    start_pos[2],
+                    target_pos[0],
+                    target_pos[1],
+                    target_pos[2],
+                    sample_count,
+                    sample_retract_dist,
+                    speed,
+                    lift_speed,
+                )
+            )
+        else:
+            gcmd.respond_info(
+                "PROBE_ACCURACY at X:%.3f Y:%.3f Z:%.3f"
+                " (samples=%d retract=%.3f"
+                " speed=%.1f lift_speed=%.1f)\n"
+                % (
+                    start_pos[0],
+                    start_pos[1],
+                    start_pos[2],
+                    sample_count,
+                    sample_retract_dist,
+                    speed,
+                    lift_speed,
+                )
+            )
         # Probe bed sample_count times
         self.multi_probe_begin(always_restore_toolhead=True)
         # Initialize probe retry state
         self.retry_session.start(gcmd)
         # force FAIL behavior for PROBE_ACCURACY, never accept bad probes
         self.retry_session.set_retry_strategy(RetryStrategy.FAIL)
-        self.retry_session.set_position(toolhead.get_position())
+        self.retry_session.set_position(start_pos)
         positions = []
-        self._discard_first_result(speed, self.retry_session, gcmd)
+        use_explicit_target = bool(explicit_axes)
+        self._discard_first_result(
+            speed,
+            self.retry_session,
+            gcmd,
+            use_explicit_target,
+            probe_target,
+        )
         while len(positions) < sample_count:
             # Probe position
-            pos = self._run_probe_with_retries(speed, self.retry_session, gcmd)
+            pos = self._run_probe_with_retries(
+                speed,
+                self.retry_session,
+                gcmd,
+                use_explicit_target,
+                use_explicit_target,
+                probe_target,
+            )
             positions.append(pos)
             # Retract
             self._retract(gcmd)
         self.multi_probe_end()
         self.retry_session.end()
+        if use_explicit_target:
+            values = self._get_probe_accuracy_projection_values(
+                positions, start_pos, probe_target[0], gcmd
+            )
+            stats = self._calc_probe_accuracy_stats(values)
+            gcmd.respond_info(
+                "probe accuracy directional results: maximum %.6f, "
+                "minimum %.6f, range %.6f, average %.6f, median %.6f, "
+                "standard deviation %.6f, average delta %.6f"
+                % (
+                    stats["max"],
+                    stats["min"],
+                    stats["range"],
+                    stats["avg"],
+                    stats["median"],
+                    stats["sigma"],
+                    stats["avg_delta"],
+                )
+            )
+            return
         # Calculate maximum, minimum and average values
         max_value = max([p[2] for p in positions])
         min_value = min([p[2] for p in positions])
