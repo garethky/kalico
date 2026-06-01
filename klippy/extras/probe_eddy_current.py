@@ -350,6 +350,9 @@ class EddyEndstopWrapper:
         new_pos[2] += self._z_offset - halt_z
         return new_pos
 
+    def get_probe_axes(self):
+        return "z"
+
     def multi_probe_begin(self):
         if not self._calibration.is_calibrated():
             raise self._printer.command_error(

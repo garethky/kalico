@@ -232,6 +232,9 @@ class BLTouchEndstopWrapper:
         phoming = self.printer.lookup_object("homing")
         return phoming.probing_move(self, pos, speed)
 
+    def get_probe_axes(self):
+        return "z"
+
     def probe_prepare(self, hmove):
         if self.multi == "OFF" or self.multi == "FIRST":
             self.lower_probe()

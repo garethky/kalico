@@ -942,6 +942,9 @@ class DockableProbe:
         phoming = self.printer.lookup_object("homing")
         return phoming.probing_move(self, pos, speed)
 
+    def get_probe_axes(self):
+        return "z"
+
 
 def load_config(config):
     msp = DockableProbe(config)
