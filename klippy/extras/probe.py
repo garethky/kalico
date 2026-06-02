@@ -25,6 +25,30 @@ can travel further (the Z minimum position can be negative).
 """
 
 
+class ProbeMoveStepperTracker:
+    def __init__(self, stepper_source, start_pos, end_pos):
+        self._active_axes = tuple(
+            i for i in range(3) if start_pos[i] != end_pos[i]
+        )
+        self._active_steppers = tuple(
+            stepper
+            for stepper in stepper_source.get_steppers()
+            if self._is_stepper_active(stepper, start_pos, end_pos)
+        )
+
+    def get_active_axes(self):
+        return list(self._active_axes)
+
+    def get_steppers(self):
+        return list(self._active_steppers)
+
+    @staticmethod
+    def _is_stepper_active(stepper, start_pos, end_pos):
+        return stepper.calc_position_from_coord(
+            start_pos
+        ) != stepper.calc_position_from_coord(end_pos)
+
+
 class RetryStrategy(IntEnum):
     # Probe strategy constants
     FAIL = 0  # bad probes fail with a command error

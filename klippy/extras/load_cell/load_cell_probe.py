@@ -12,7 +12,8 @@ from klippy import mcu
 from klippy.configfile import ConfigWrapper, PrinterConfig
 from klippy.extras.bed_mesh import BedMesh
 from klippy.extras.homing import PrinterHoming
-from klippy.extras.probe import PrinterProbe, ProbePointsHelper
+from klippy.extras.probe import (PrinterProbe, ProbePointsHelper,
+    ProbeMoveStepperTracker)
 from klippy.gcode import GCodeCommand, GCodeDispatch
 from klippy.printer import Printer
 from klippy.toolhead import ToolHead
@@ -639,9 +640,9 @@ class LoadCellPrimitives:
         self._config_helper = config_helper
         self._load_cell = mcu_load_cell_probe.get_load_cell()
         self._dispatch = mcu_load_cell_probe.get_dispatch()
+        self._active_move_steppers = None
         # internal state tracking
         self._last_trigger_time = 0
-        self._active_steppers = None
 
     def get_mcu(self):
         return self._mcu_load_cell_probe.get_mcu()
@@ -688,29 +689,18 @@ class LoadCellPrimitives:
             error = "Load Cell Probe Error: unknown reason code %i" % (res,)
             if res in self.ERROR_MAP:
                 error = self.ERROR_MAP[res]
-            self._active_steppers = None
             raise self._printer.command_error(error)
         if res != mcu.MCU_trsync.REASON_ENDSTOP_HIT:
-            self._active_steppers = None
             return 0.0
-        self._active_steppers = None
         return self._last_trigger_time
 
     def add_stepper(self, stepper):
         self._dispatch.add_stepper(stepper)
 
     def get_steppers(self):
-        if self._active_steppers is not None:
-            return list(self._active_steppers)
+        if self._active_move_steppers is not None:
+            return list(self._active_move_steppers)
         return self.get_dispatch().get_steppers()
-
-    def _set_active_steppers(self, start_pos, end_pos):
-        self._active_steppers = [
-            stepper
-            for stepper in self.get_dispatch().get_steppers()
-            if stepper.calc_position_from_coord(start_pos)
-            != stepper.calc_position_from_coord(end_pos)
-        ]
 
     def query_endstop(self, print_time):
         return False
@@ -723,8 +713,12 @@ class LoadCellPrimitives:
         collector = None
         try:
             toolhead = self._printer.lookup_object("toolhead")
-            self._set_active_steppers(toolhead.get_position(), pos)
-            if not self._active_steppers:
+            start_pos = toolhead.get_position()
+            tracker: ProbeMoveStepperTracker = ProbeMoveStepperTracker(
+                self._dispatch, start_pos, pos
+            )
+            active_steppers = tracker.get_steppers()
+            if not active_steppers:
                 raise self._printer.command_error(
                     "Load Cell Probe Error: probe move has no active steppers"
                 )
@@ -736,21 +730,26 @@ class LoadCellPrimitives:
             printer_homing: PrinterHoming = self._printer.lookup_object(
                 "homing"
             )
+            self._active_move_steppers = active_steppers
             return printer_homing.probing_move(mcu_probe, pos, speed), collector
         except self._printer.command_error:
-            self._active_steppers = None
             if collector is not None:
                 collector.stop_collecting()
             raise
+        finally:
+            self._active_move_steppers = None
 
     # Wait for the MCU to trigger with no movement
     def probing_test(self, gcmd, timeout):
         self.tare(gcmd)
         toolhead = self._printer.lookup_object("toolhead")
         print_time = toolhead.get_last_move_time()
-        self._active_steppers = []
-        self.home_start(print_time)
-        return self.home_wait(print_time + timeout)
+        self._active_move_steppers = []
+        try:
+            self.home_start(print_time)
+            return self.home_wait(print_time + timeout)
+        finally:
+            self._active_move_steppers = None
 
     def get_status(self, eventtime):
         status = self._load_cell.get_status(eventtime)
