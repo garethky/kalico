@@ -10,6 +10,8 @@ import math
 from enum import IntEnum
 from typing import Optional, Union
 
+import numpy as np
+
 from klippy import Printer, pins
 from klippy.configfile import ConfigWrapper
 from klippy.extras.gcode_macro import Template
@@ -573,9 +575,15 @@ class PrinterProbe:
                 )
             # add z compensation to probe position
             epos[2] += z_compensation
-        self.gcode.respond_info(
-            "probe at %.3f,%.3f is z=%.6f" % (epos[0], epos[1], epos[2])
-        )
+        if explicit_axes:
+            self.gcode.respond_info(
+                "probe at %.3f,%.3f,%.3f is x=%.6f y=%.6f z=%.6f"
+                % (pos[0], pos[1], pos[2], epos[0], epos[1], epos[2])
+            )
+        else:
+            self.gcode.respond_info(
+                "probe at %.3f,%.3f is z=%.6f" % (epos[0], epos[1], epos[2])
+            )
         return epos[:3], is_good
 
     def _move(self, coord, speed):
@@ -584,6 +592,43 @@ class PrinterProbe:
     def _calc_mean(self, positions) -> list[float]:
         count = float(len(positions))
         return [sum([pos[i] for pos in positions]) / count for i in range(3)]
+
+    def _calc_vector_mean(self, positions: list[list[float]]) -> list[float]:
+        # Probe points for a vector probe are collinear, so the per-axis mean
+        # is itself a point on the approach vector.
+        return np.mean(positions, axis=0).tolist()
+
+    def _project_onto_vector(
+        self,
+        positions: list[list[float]],
+        start_pos: list[float],
+        target_pos: list[float],
+    ) -> np.ndarray:
+        # Signed distance of each probe point along the approach vector.
+        points = np.asarray(positions, dtype=float)[:, :3]
+        start = np.asarray(start_pos, dtype=float)[:3]
+        vector = np.asarray(target_pos, dtype=float)[:3] - start
+        length = np.linalg.norm(vector)
+        if length == 0.0:
+            raise self.printer.command_error("Probe target must move")
+        return (points - start) @ (vector / length)
+
+    def _calc_vector_median(
+        self,
+        positions: list[list[float]],
+        start_pos: list[float],
+        target_pos: list[float],
+    ) -> list[float]:
+        # Order collinear points by distance along the vector, then take the
+        # middle point (odd count) or the mean of the two middle points (even).
+        order = np.argsort(
+            self._project_onto_vector(positions, start_pos, target_pos)
+        )
+        points = np.asarray(positions, dtype=float)[:, :3]
+        middle = len(positions) // 2
+        if len(positions) & 1:
+            return points[order[middle]].tolist()
+        return points[order[middle - 1 : middle + 1]].mean(axis=0).tolist()
 
     def _calc_median(self, positions) -> list[float]:
         z_sorted = sorted(positions, key=(lambda p: p[2]))
@@ -627,15 +672,9 @@ class PrinterProbe:
         target_pos: list[float],
         gcmd: GCodeCommand,
     ) -> list[float]:
-        vector = [target_pos[i] - start_pos[i] for i in range(3)]
-        length = math.sqrt(sum([axis * axis for axis in vector]))
-        if length == 0.0:
-            raise gcmd.error("Explicit PROBE_ACCURACY target must move")
-        unit = [axis / length for axis in vector]
-        return [
-            sum([(pos[i] - start_pos[i]) * unit[i] for i in range(3)])
-            for pos in positions
-        ]
+        return self._project_onto_vector(
+            positions, start_pos, target_pos
+        ).tolist()
 
     @property
     def _drop_first_result(self):
@@ -789,9 +828,14 @@ class PrinterProbe:
                 probe_start,
             )
             positions.append(pos)
-            # Check samples tolerance
-            z_positions = [p[2] for p in positions]
-            if max(z_positions) - min(z_positions) > samples_tolerance:
+            # Check samples tolerance along the probed axis/vector
+            if explicit_axes:
+                values = self._project_onto_vector(
+                    positions, probe_start, probe_target[0]
+                )
+            else:
+                values = [p[2] for p in positions]
+            if max(values) - min(values) > samples_tolerance:
                 if retries >= samples_retries:
                     raise gcmd.error("Probe samples exceed samples_tolerance")
                 gcmd.respond_info("Probe samples exceed tolerance. Retrying...")
@@ -805,6 +849,12 @@ class PrinterProbe:
         if retry_session is None:
             self.retry_session.end()
         # Calculate and return result
+        if explicit_axes:
+            if samples_result == "median":
+                return self._calc_vector_median(
+                    positions, probe_start, probe_target[0]
+                )
+            return self._calc_vector_mean(positions)
         if samples_result == "median":
             return self._calc_median(positions)
         return self._calc_mean(positions)
