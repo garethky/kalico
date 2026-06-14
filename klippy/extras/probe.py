@@ -981,46 +981,25 @@ class PrinterProbe:
             values = self._get_probe_accuracy_projection_values(
                 positions, start_pos, probe_target[0], gcmd
             )
-            stats = self._calc_probe_accuracy_stats(values)
-            gcmd.respond_info(
-                "probe accuracy directional results: maximum %.6f, "
-                "minimum %.6f, range %.6f, average %.6f, median %.6f, "
-                "standard deviation %.6f, average delta %.6f"
-                % (
-                    stats["max"],
-                    stats["min"],
-                    stats["range"],
-                    stats["avg"],
-                    stats["median"],
-                    stats["sigma"],
-                    stats["avg_delta"],
-                )
-            )
-            return
-        # Calculate maximum, minimum and average values
-        max_value = max([p[2] for p in positions])
-        min_value = min([p[2] for p in positions])
-        range_value = max_value - min_value
-        avg_value = self._calc_mean(positions)[2]
-        median = self._calc_median(positions)[2]
-        # calculate the standard deviation
-        deviation_sum = 0
-        for i in range(len(positions)):
-            deviation_sum += pow(positions[i][2] - avg_value, 2.0)
-        sigma = (deviation_sum / len(positions)) ** 0.5
-        # calculate the average delta between successive probes
-        delta_sum = 0
-        for i in range(1, len(positions)):
-            delta_sum += abs(positions[i][2] - positions[i - 1][2])
-        avg_delta = delta_sum / (len(positions) - 1)
-        # Show information
-        decimals = 6
+            label = "directional "
+        else:
+            values = [p[2] for p in positions]
+            label = ""
+        stats = self._calc_probe_accuracy_stats(values)
         gcmd.respond_info(
-            f"probe accuracy results: maximum {max_value:.{decimals}f}, "
-            f"minimum {min_value:.{decimals}f}, range {range_value:.{decimals}f}, "
-            f"average {avg_value:.{decimals}f}, median {median:.{decimals}f}, "
-            f"standard deviation {sigma:.{decimals}f}, "
-            f"average delta {avg_delta:.{decimals}f}"
+            "probe accuracy %sresults: maximum %.6f, "
+            "minimum %.6f, range %.6f, average %.6f, median %.6f, "
+            "standard deviation %.6f, average delta %.6f"
+            % (
+                label,
+                stats["max"],
+                stats["min"],
+                stats["range"],
+                stats["avg"],
+                stats["median"],
+                stats["sigma"],
+                stats["avg_delta"],
+            )
         )
 
     def probe_calibrate_finalize(self, kin_pos):
