@@ -171,6 +171,9 @@ configuration between multiple sections. References take the form of
 `${section.option}` to look up a value elsewhere in your configuration. Note,
 that constants must always be lower case.
 
+References are a plain text substitution: the referenced value is copied
+as-is. Expressions and Python-like functions are not evaluated.
+
 Optionally, a `[constants]` section can be used specifically to store
 these values. Unused constants will display a warning. However, `[constants]`
 will display an error if none of the constants are used.
@@ -782,6 +785,12 @@ max_z_accel:
 # stepper controlling the X-Y movement.
 [stepper_x]
 
+# Additional steppers may be added to the X rail as [stepper_x1],
+# [stepper_x2], etc. Each additional X stepper is driven with the
+# mirrored belt direction. Combined with additional Y steppers
+# ([stepper_y1]) this supports four motor hybrid machines such as the
+# RatRig V-Core hybrid.
+
 # The stepper_y section is used to describe the stepper controlling
 # the Y axis.
 [stepper_y]
@@ -818,6 +827,10 @@ max_z_accel:
 # The stepper_x section is used to describe the X axis as well as the
 # stepper controlling the X-Z movement.
 [stepper_x]
+
+# Additional steppers may be added to the X rail as [stepper_x1],
+# [stepper_x2], etc. Each additional X stepper is driven with the
+# mirrored belt direction.
 
 # The stepper_y section is used to describe the stepper controlling
 # the Y axis.
