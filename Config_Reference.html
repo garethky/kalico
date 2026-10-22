@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="logo/kalico-32x32.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -29,7 +29,7 @@
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1790,6 +1790,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#indx-temperature-sensor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INDX temperature sensor
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2133,6 +2144,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#tmc5262" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [tmc5262]
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2462,6 +2484,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#cs1237" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CS1237
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#hx711" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2548,6 +2581,17 @@
   
     <nav class="md-nav" aria-label="Board specific hardware support">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#indx" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [indx]
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#sx1509" class="md-nav__link">
@@ -2945,6 +2989,34 @@
     
   
     Dockable Probe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="INDX.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bondtech INDX
   
 
     
@@ -4055,6 +4127,34 @@
     
   
     Code overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Developer_Cookbook.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Cookbook
   
 
     
@@ -6041,6 +6141,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#indx-temperature-sensor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INDX temperature sensor
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -6384,6 +6495,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#tmc5262" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [tmc5262]
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -6713,6 +6835,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#cs1237" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CS1237
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#hx711" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -6799,6 +6932,17 @@
   
     <nav class="md-nav" aria-label="Board specific hardware support">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#indx" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [indx]
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#sx1509" class="md-nav__link">
@@ -7263,7 +7407,8 @@ position_max:
 #   Distance to backoff (in mm) before homing a second time during
 #   homing. If `use_sensorless_homing` is false, this setting can be set
 #   to zero to disable the second home. If `use_sensorless_homing` is
-#   true, this setting can be &gt; 0 to backoff after homing. The default
+#   true, this setting can be &gt; 0 to backoff after homing (physical
+#   endstops stay on the endstop after the final touch). The default
 #   is 5mm.
 #homing_retract_speed:
 #   Speed to use on the retract move after homing in case this should
@@ -9201,6 +9346,32 @@ main printer config file. Wildcards may also be used (eg,
 <div class="highlight"><pre><span></span><code>[include my_other_config.cfg]
 </code></pre></div>
 
+<p>Variables may be passed to an include by listing them below the include
+line. The included file is then rendered as a Jinja2 template, using
+<code>{! !}</code> for expressions and <code>{!% %!}</code> for statements (so they don't clash
+with the <code>{ }</code> / <code>{% %}</code> templates used by gcode macros). The variables
+are also available to any file it includes. A file included without
+variables is read as-is. Referencing a variable that was not passed is
+an error.</p>
+<div class="highlight"><pre><span></span><code>[include toolhead_board.cfg]
+mcu_name: toolhead0
+mcu_serial: /dev/serial/by-id/usb-Klipper_rp2040_toolhead0
+
+[include toolhead_board.cfg]
+mcu_name: toolhead1
+mcu_serial: /dev/serial/by-id/usb-Klipper_rp2040_toolhead1
+</code></pre></div>
+
+<p>Where <code>toolhead_board.cfg</code> contains:</p>
+<div class="highlight"><pre><span></span><code>[mcu {! mcu_name !}]
+serial: {! mcu_serial !}
+
+{!% if mcu_name == &quot;toolhead0&quot; %!}
+[fan_generic {! mcu_name !}_fan]
+pin: {! mcu_name !}:gpio13
+{!% endif %!}
+</code></pre></div>
+
 <h3 id="duplicate_pin_override">[duplicate_pin_override]<a class="headerlink" href="#duplicate_pin_override" title="Permanent link">&para;</a></h3>
 <p>This tool allows a single micro-controller pin to be defined multiple
 times in a config file without normal error checking. This is intended
@@ -9221,12 +9392,13 @@ pins:
 <p>Z height probe. One may define this section to enable Z height probing
 hardware. When this section is enabled, PROBE and QUERY_PROBE extended
 <a href="G-Codes.html#probe">g-code commands</a> become available. Also, see the
-<a href="Probe_Calibrate.html">probe calibrate guide</a>. The probe section also
-creates a virtual "probe:z_virtual_endstop" pin. One may set the
-stepper_z endstop_pin to this virtual pin on cartesian style printers
-that use the probe in place of a z endstop. If using
-"probe:z_virtual_endstop" then do not define a position_endstop in the
-stepper_z config section.</p>
+<a href="Probe_Calibrate.html">probe calibrate guide</a>. The probe section, and all
+other probe types, also create virtual endstops by the name of
+<code>&lt;probe name&gt;:z_virtual_endstop</code>. The default probe additionally registers
+itself as <code>probe:z_virtual_endstop</code>. One may set the stepper_z endstop_pin
+to such a virtual pin on cartesian style printers that use the probe in
+place of a z endstop. If using "probe:z_virtual_endstop" then do not define
+a position_endstop in the stepper_z config section.</p>
 <div class="highlight"><pre><span></span><code>[probe]
 pin:
 #   Probe detection pin. If the pin is on a different microcontroller
@@ -9272,6 +9444,11 @@ z_offset:
 #   not obtained in the given number of retries then an error is
 #   reported. The default is zero which causes an error to be reported
 #   on the first sample that exceeds samples_tolerance.
+#register_as_probe: True
+#   If this probe should be automatically registered as the default one.
+#   Defaults to true. When using multiple probes, only a single probe is
+#   allowed to register as the default, and all other probe configuration
+#   blocks must set this to false.
 #activate_gcode:
 #   A list of G-Code commands to execute prior to each probe attempt.
 #   See docs/Command_Templates.md for G-Code format. This may be
@@ -9319,6 +9496,13 @@ z_offset:
 #   0 will disable scrubbing. The default is 0.
 </code></pre></div>
 
+<p>It is also possible to create named probes.</p>
+<div class="highlight"><pre><span></span><code>[probe named_probe]
+# All options from [probe] are accepted.
+</code></pre></div>
+
+<p>At most one probe may set <code>register_as_probe: True</code>. If an unnamed <code>[probe]</code>
+is present, no other probe may set <code>register_as_probe: True</code>.</p>
 <h3 id="nozzle_cleanup">[nozzle_cleanup]<a class="headerlink" href="#nozzle_cleanup" title="Permanent link">&para;</a></h3>
 <p>Enables the <a href="G-Codes.html#nozzle_cleanup">NOZZLE_CLEANUP</a> gcode command. This 
 performs a nozzle cleaning routine that probes over a grid pattern to
@@ -9333,7 +9517,8 @@ quality detection, such as the <a href="#load_cell_probe">load_cell_probe</a>.</
 #   Number of probe locations along the X axis. Can be negative. Default is 10.
 #pattern_y: 4
 #   Number of probe locations along the Y axis. Can be negative. Default is 4.
-#
+#probe:
+#   Probe to use, if not the default probe.
 #These config values are inherited from [probe] if not specified:
 #speed:
 #lift_speed:
@@ -9395,6 +9580,7 @@ control_pin:
 #samples_result:
 #samples_tolerance:
 #samples_tolerance_retries:
+#register_as_probe:
 #   See the &quot;probe&quot; section for information on these parameters.
 </code></pre></div>
 
@@ -9502,6 +9688,7 @@ detach_position: 0,0,0
 #samples_result:
 #samples_tolerance:
 #samples_tolerance_retries:
+#register_as_probe:
 #activate_gcode:
 #deactivate_gcode:
 #   See the &quot;probe&quot; section for information on these parameters.
@@ -9552,6 +9739,7 @@ z_offset:
 #samples_result:
 #samples_tolerance:
 #samples_tolerance_retries:
+#register_as_probe:
 #activate_gcode:
 #deactivate_gcode:
 #deactivate_on_each_sample:
@@ -9572,6 +9760,10 @@ sensor_type: ldc1612
 #intb_pin:
 #   MCU gpio pin connected to the ldc1612 sensor&#39;s INTB pin (if
 #   available). The default is to not use the INTB pin.
+#amplitude_errors: both
+#   Controls the amplitude related errors that will register as sensor failure.
+#   Valid options are: none, low, high, both. Defaults to both, meaning
+#   any amplitude related errors register as sensor failure.
 #z_offset:
 #   The nominal distance (in mm) between the nozzle and bed that a
 #   probing attempt should stop at. This parameter must be provided.
@@ -9592,6 +9784,7 @@ sensor_type: ldc1612
 #samples_result:
 #samples_tolerance:
 #samples_tolerance_retries:
+#register_as_probe:
 #   See the &quot;probe&quot; section for information on these parameters.
 </code></pre></div>
 
@@ -10373,6 +10566,20 @@ max_temp: 325
 #   If set to true, limits will be echoed to console instead of just being ignored if ignore_limits is true
 </code></pre></div>
 
+<h3 id="indx-temperature-sensor">INDX temperature sensor<a class="headerlink" href="#indx-temperature-sensor" title="Permanent link">&para;</a></h3>
+<p>Temperature reported by a <a href="#indx">Bondtech INDX toolboard</a>. The
+default "heater" kind reports the nozzle temperature and is the one
+to use for the extruder; the other kinds are mainly diagnostic.</p>
+<div class="highlight"><pre><span></span><code>sensor_type: indx
+#indx_sensor: heater
+#   The temperature to report. Available kinds are &quot;heater&quot; (nozzle
+#   temperature), &quot;sensor&quot; (IR sensor die temperature), &quot;board&quot;
+#   (toolboard temperature), &quot;bracket&quot; (sensor bracket temperature),
+#   &quot;ldc_coil&quot; (eddy current probe coil temperature), &quot;check_model&quot;
+#   (thermal model prediction) and &quot;check_model_delta&quot; (difference
+#   between the model prediction and the measured temperature).
+</code></pre></div>
+
 <h2 id="fans">Fans<a class="headerlink" href="#fans" title="Permanent link">&para;</a></h2>
 <h3 id="fan">[fan]<a class="headerlink" href="#fan" title="Permanent link">&para;</a></h3>
 <p>Print cooling fan.</p>
@@ -10499,11 +10706,11 @@ a shutdown_speed equal to max_power.</p>
 
 <h3 id="controller_fan">[controller_fan]<a class="headerlink" href="#controller_fan" title="Permanent link">&para;</a></h3>
 <p>Controller cooling fan (one may define any number of sections with a
-"controller_fan" prefix). A "controller fan" is a fan that will be
-enabled whenever its associated heater or its associated stepper
-driver is active. The fan will stop whenever an idle_timeout is
-reached to ensure no overheating will occur after deactivating a
-watched component.</p>
+"controller_fan" prefix). A "controller fan" changes speed based on
+its associated heater or stepper driver. The fan runs at fan_speed
+while a watched component is active, then at idle_speed for
+idle_timeout seconds. After that timeout, and before the first watched
+activity after startup, the fan runs at standby_speed.</p>
 <div class="highlight"><pre><span></span><code>[controller_fan my_controller_fan]
 #pin:
 #max_power:
@@ -10522,13 +10729,17 @@ watched component.</p>
 #   will be set to when a heater or stepper driver is active.
 #   The default is 1.0
 #idle_timeout:
-#   The amount of time (in seconds) after a stepper driver or heater
-#   was active and the fan should be kept running. The default
-#   is 30 seconds.
+#   The amount of time (in seconds) to use idle_speed after a stepper
+#   driver or heater becomes inactive. A value of 0 transitions
+#   directly to standby_speed. The default is 30 seconds.
 #idle_speed:
 #   The fan speed (expressed as a value from 0.0 to 1.0) that the fan
-#   will be set to when a heater or stepper driver was active and
-#   before the idle_timeout is reached. The default is fan_speed.
+#   will be set to after a heater or stepper driver becomes inactive
+#   and before the idle_timeout is reached. The default is fan_speed.
+#standby_speed: 0.0
+#   The fan speed (expressed as a value from 0.0 to 1.0) that the fan
+#   will be set to before the first heater or stepper driver activity
+#   and after idle_timeout is reached. The default is 0.0.
 #heater:
 #stepper:
 #   Name of the config section defining the heater/stepper that this fan
@@ -11597,6 +11808,83 @@ sense_resistor:
 #   sensorless homing.
 </code></pre></div>
 
+<h3 id="tmc5262">[tmc5262]<a class="headerlink" href="#tmc5262" title="Permanent link">&para;</a></h3>
+<p>Configure a TMC5262 stepper motor driver via SPI. Define a section with a
+"tmc5262" prefix followed by the name of the corresponding stepper
+(for example, "[tmc5262 stepper_x]").</p>
+<p>This implementation supports SpreadCycle with a physical endstop.</p>
+<div class="highlight"><pre><span></span><code>[tmc5262 stepper_x]
+cs_pin:
+#   The pin connected to the driver&#39;s chip select input. This parameter
+#   must be provided.
+#spi_speed:
+#spi_bus:
+#spi_software_sclk_pin:
+#spi_software_mosi_pin:
+#spi_software_miso_pin:
+#   See the &quot;common SPI settings&quot; section.
+#chain_position:
+#chain_length:
+#   See the tmc5160 section for SPI daisy chain settings.
+#interpolate: True
+#   Enable interpolation to 256 microsteps. The default is True.
+run_current:
+#   Motor current in amps RMS. This parameter must be provided.
+#   Klipper selects the smallest hardware current range that fits this
+#   value. SET_TMC_CURRENT is limited to that range; configure a higher
+#   run_current and restart to select a larger range if needed.
+#hold_current:
+#   Current in amps RMS when the motor is not moving. The default is
+#   run_current. Setting a separate hold_current is not recommended;
+#   see TMC_Drivers.md.
+#home_current:
+#   The amount of current (in amps RMS) to configure the driver to use
+#   during homing procedures. The default is to not reduce the current.
+#current_change_dwell_time:
+#   The amount of time (in seconds) to wait after changing homing current.
+#   The default is 0.5 seconds.
+#rref: 12000
+#   Resistance in ohms of the reference resistor between REF and GND.
+#   Obtain this value from the driver board documentation or schematic.
+#   The default is 12000. The driver uses integrated current sensing,
+#   not an external sense resistor.
+#driver_MSLUT0: 2863314260
+#driver_MSLUT1: 1251300522
+#driver_MSLUT2: 608774441
+#driver_MSLUT3: 269500962
+#driver_MSLUT4: 4227858431
+#driver_MSLUT5: 3048961917
+#driver_MSLUT6: 1227445590
+#driver_MSLUT7: 4211234
+#driver_W0: 2
+#driver_W1: 1
+#driver_W2: 1
+#driver_W3: 1
+#driver_X1: 128
+#driver_X2: 255
+#driver_X3: 255
+#driver_START_SIN: 0
+#driver_START_SIN90: 247
+#driver_OFFSET_SIN90: 0
+#   See the tmc2240 section for Microstep Table settings.
+#driver_MULTISTEP_FILT: True
+#driver_IHOLDDELAY: 7
+#driver_IRUNDELAY: 4
+#driver_TPOWERDOWN: 10
+#driver_TBL: 2
+#driver_TOFF: 3
+#driver_HEND: 2
+#driver_HSTRT: 5
+#driver_FD3: 0
+#driver_DISFDCC: 0
+#driver_TPFD: 4
+#driver_CHM: 0
+#driver_SLOPE_CONTROL: 3
+#   Set the corresponding register field during driver configuration.
+#   See the TMC5262 datasheet for field definitions. The defaults are
+#   shown above.
+</code></pre></div>
+
 <h2 id="run-time-stepper-motor-current-configuration">Run-time stepper motor current configuration<a class="headerlink" href="#run-time-stepper-motor-current-configuration" title="Permanent link">&para;</a></h2>
 <h3 id="ad5206">[ad5206]<a class="headerlink" href="#ad5206" title="Permanent link">&para;</a></h3>
 <p>Statically configured AD5206 digipots connected via SPI bus (one may
@@ -12396,6 +12684,27 @@ sensor_type:
 #   decreasing force value when placed under load.
 </code></pre></div>
 
+<h4 id="cs1237">CS1237<a class="headerlink" href="#cs1237" title="Permanent link">&para;</a></h4>
+<p>The CS1237 sensor backend supports both <code>[load_cell]</code> and
+<code>[load_cell_probe]</code>.</p>
+<div class="highlight"><pre><span></span><code>[load_cell my_cs1237]
+sensor_type: cs1237
+sclk_pin:
+#   The pin connected to the CS1237 clock line. This parameter must be
+#   provided.
+dout_pin:
+#   The pin connected to the bidirectional CS1237 DOUT line. This parameter
+#   must be provided.
+#sample_rate: 640
+#   Valid values for sample_rate are 10, 40, 640, or 1280. The default is 640.
+#gain: 128
+#   Valid values for gain are 1, 2, 64, or 128. The default is 128.
+#reference_output: True
+#   Enable the CS1237 REFO reference output. The default is True.
+</code></pre></div>
+
+<p>Both pins must be on the same MCU. DOUT is bidirectional during
+configuration.</p>
 <h4 id="hx711">HX711<a class="headerlink" href="#hx711" title="Permanent link">&para;</a></h4>
 <p>This is a 24 bit low sample rate chip using "bit-bang" communications. It is
 suitable for filament scales.</p>
@@ -12637,6 +12946,7 @@ sensor_type:
 #samples_result:
 #samples_tolerance:
 #samples_tolerance_retries:
+#register_as_probe:
 #activate_gcode:
 #deactivate_gcode:
 #   See the &quot;[probe]&quot; section for a description of the above parameters.
@@ -12644,6 +12954,89 @@ sensor_type:
 
 <p>See <a href="Load_Cell.html#tap-quality-components">Tap Quality Components</a> for more details on maximum for tap quality.</p>
 <h2 id="board-specific-hardware-support">Board specific hardware support<a class="headerlink" href="#board-specific-hardware-support" title="Permanent link">&para;</a></h2>
+<h3 id="indx">[indx]<a class="headerlink" href="#indx" title="Permanent link">&para;</a></h3>
+<p>Support for the Bondtech INDX toolboard with its inductive nozzle
+heater, contactless IR temperature sensor and on-board PID
+controller. The toolboard must run Kalico firmware built with the
+"Bondtech INDX Heater" option enabled. See the
+<a href="INDX.html">INDX document</a> for setup and calibration instructions and
+<a href="G-Codes.html#indx">G-Codes</a> for the available commands.</p>
+<p>The module registers named aliases for the toolboard pins (e.g.
+<code>&lt;mcu&gt;:motor_step</code>, <code>&lt;mcu&gt;:part_cooling</code>, <code>&lt;mcu&gt;:endstop</code>), exposes
+the nozzle heater as the virtual pin <code>indx:heater</code>, the nozzle
+temperature as <code>sensor_type: indx</code>, and automatically manages the
+heatsink fan. The heater will not heat until INDX_CALIBRATE has been
+run.</p>
+<div class="highlight"><pre><span></span><code>[indx]
+mcu:
+#   The name of the mcu config section for the INDX toolboard (e.g.
+#   &quot;indxmcu&quot; when the toolboard is defined as &quot;[mcu indxmcu]&quot;). This
+#   parameter must be provided.
+#part_cooling_fan: fan
+#   Name of the part cooling fan object on the tool. The fan speed is
+#   used by the thermal model to compensate for part cooling airflow.
+#   Set to an empty string to disable.
+#pid_kp: 4.0
+#pid_ti: 0.2
+#pid_td: 0.0
+#pid_b: 1.0
+#pid_i_window: 0.2
+#pid_i_limit: 0.5
+#   Parameters for the PID controller running on the toolboard. The
+#   defaults should work for most setups.
+#max_temp_nozzle: 305.0
+#max_temp_sensor: 130.0
+#max_temp_bracket: 130.0
+#max_temp_board: 100.0
+#   Maximum allowed temperature for the nozzle, the IR sensor die,
+#   the sensor bracket and the toolboard. Exceeding any of these
+#   triggers a shutdown.
+#max_model_error: 50.0
+#   Maximum allowed difference (in Celsius) between the measured
+#   nozzle temperature and the thermal model prediction before a
+#   shutdown is triggered.
+#coil_time_on:
+#coil_time_off:
+#coil_time_on_first:
+#   Inductive coil drive timings in microseconds. These are measured
+#   by INDX_CALIBRATE and stored by SAVE_CONFIG; they should not
+#   normally be set by hand.
+#max_power:
+#model_max_power_temp_coeff:
+#model_thermal_capacity:
+#model_to_ambient_r:
+#   Thermal model parameters. These are measured by INDX_CALIBRATE
+#   and stored by SAVE_CONFIG; they should not normally be set by
+#   hand.
+#model_filament_diameter: 1.75
+#model_filament_density: 1.20
+#model_filament_heat_capacity: 1.8
+#   Filament parameters used by the thermal model to account for the
+#   energy carried away by extruded filament. The density is in
+#   g/cm^3 and the heat capacity in J/(g*K). These can also be
+#   measured with INDX_LOAD_FILAMENT or changed at runtime with
+#   INDX_SET_MODEL_PARAMS.
+#model_part_cooling_fan_a: 0.0
+#model_part_cooling_fan_k: 0.0
+#   Part cooling fan compensation for the thermal model, measured by
+#   INDX_FAN_CALIBRATE and stored by SAVE_CONFIG.
+#model_ambient_blend_board: 0.0
+#model_ambient_blend_bracket: 1.0
+#model_ambient_blend_sensor: 1.0
+#   Relative weights of the toolboard, sensor bracket and IR sensor
+#   die temperatures when estimating the ambient temperature for the
+#   thermal model.
+#model_error_application: 1.0
+#   Fraction of the observed model error fed back into the thermal
+#   model on each update.
+#ir_sensor_exponent:
+#ir_sensor_obj_gain:
+#ir_sensor_bracket_gain:
+#   Override the IR sensor tuning parameters stored in the sensor
+#   EEPROM. All three must be provided if any is given. These should
+#   not normally be set.
+</code></pre></div>
+
 <h3 id="sx1509">[sx1509]<a class="headerlink" href="#sx1509" title="Permanent link">&para;</a></h3>
 <p>Configure an SX1509 I2C to GPIO expander. Due to the delay incurred by
 I2C communication you should NOT use SX1509 pins as stepper enable,
@@ -13250,7 +13643,7 @@ All other Kalico micro-controllers use a
       <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.top", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.tracking", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.action.edit", "optimize"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

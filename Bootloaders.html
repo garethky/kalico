@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="logo/kalico-32x32.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -29,7 +29,7 @@
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
@@ -743,6 +743,34 @@
     
   
     Dockable Probe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="INDX.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bondtech INDX
   
 
     
@@ -1873,6 +1901,34 @@
   
   
     <li class="md-nav__item">
+      <a href="Developer_Cookbook.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Cookbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="Kinematics.html" class="md-nav__link">
         
   
@@ -2458,10 +2514,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#samd21-micro-controllers-arduino-zero" class="md-nav__link">
+  <a href="#samd21-micro-controllers-adafruit-m0-arduino-zero-xiao-samd21-and-similar" class="md-nav__link">
     <span class="md-ellipsis">
       
-        SAMD21 micro-controllers (Arduino Zero)
+        SAMD21 micro-controllers (Adafruit M0, Arduino Zero, XIAO SAMD21 and Similar )
       
     </span>
   </a>
@@ -3020,10 +3076,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#samd21-micro-controllers-arduino-zero" class="md-nav__link">
+  <a href="#samd21-micro-controllers-adafruit-m0-arduino-zero-xiao-samd21-and-similar" class="md-nav__link">
     <span class="md-ellipsis">
       
-        SAMD21 micro-controllers (Arduino Zero)
+        SAMD21 micro-controllers (Adafruit M0, Arduino Zero, XIAO SAMD21 and Similar )
       
     </span>
   </a>
@@ -3397,7 +3453,7 @@ at91samd bootloader 0
 program out/klipper.elf verify
 </code></pre></div>
 
-<h2 id="samd21-micro-controllers-arduino-zero">SAMD21 micro-controllers (Arduino Zero)<a class="headerlink" href="#samd21-micro-controllers-arduino-zero" title="Permanent link">&para;</a></h2>
+<h2 id="samd21-micro-controllers-adafruit-m0-arduino-zero-xiao-samd21-and-similar">SAMD21 micro-controllers (Adafruit M0, Arduino Zero, XIAO SAMD21 and Similar )<a class="headerlink" href="#samd21-micro-controllers-adafruit-m0-arduino-zero-xiao-samd21-and-similar" title="Permanent link">&para;</a></h2>
 <p>The SAMD21 bootloader is flashed via the ARM Serial Wire Debug (SWD)
 interface. This is commonly done with a dedicated SWD hardware dongle.
 Alternatively, one can use a
@@ -3415,11 +3471,16 @@ Alternatively, one can use a
 program samd21_sam_ba.bin verify
 </code></pre></div>
 
-<p>The most common bootloader on the SAMD21 is the one found on the
-"Arduino Zero". It uses an 8KiB bootloader (the application must be
-compiled with a start address of 8KiB). One can enter this bootloader
-by double clicking the reset button. To flash an application use
-something like:</p>
+<p>One common bootloader is the one found on the "Arduino Zero",
+the SAM-BA. It uses an 8KiB bootloader (the application must be
+compiled with a start address of 8KiB).
+When building Kalico, select <code>SAM-BA</code> for Bootloader type.</p>
+<p>Adafruit M0 and Seeed Studio XIAO SAMD21 boards typically use a UF2
+bootloader which also calls for an 8KiB start address.
+When building Kalico, select <code>UF2</code> for Bootloader type.</p>
+<p>One can enter the SAM-BA or UF2 bootloaders by double clicking the
+reset button. To flash an application with either of these bootloaders,
+use something like:</p>
 <div class="highlight"><pre><span></span><code>bossac -U -p /dev/ttyACM0 --offset=0x2000 -w out/klipper.bin -v -b -R
 </code></pre></div>
 
@@ -3823,7 +3884,7 @@ running it is possible to set breakpoints and to inspect registers.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.top", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.tracking", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.action.edit", "optimize"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
