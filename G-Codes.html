@@ -2744,6 +2744,45 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#load_cell_probe_calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LOAD_CELL_PROBE_CALIBRATE
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LOAD_CELL_PROBE_CALIBRATE">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#drift_filter-calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DRIFT_FILTER Calibration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tap_performance-calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TAP_PERFORMANCE Calibration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#manual_probe" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4317,6 +4356,17 @@
     <span class="md-ellipsis">
       
         SET_Z_THERMAL_ADJUST
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#z_thermal_adjust_calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Z_THERMAL_ADJUST_CALIBRATE
       
     </span>
   </a>
@@ -8031,6 +8081,45 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#load_cell_probe_calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LOAD_CELL_PROBE_CALIBRATE
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LOAD_CELL_PROBE_CALIBRATE">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#drift_filter-calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DRIFT_FILTER Calibration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tap_performance-calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TAP_PERFORMANCE Calibration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#manual_probe" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -9610,6 +9699,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#z_thermal_adjust_calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Z_THERMAL_ADJUST_CALIBRATE
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -10784,6 +10884,57 @@ corresponding settings from the
 <li><code>MIN_TAP_QUALITY=&lt;percent&gt;</code></li>
 <li><code>DECOMPRESSION_ANGLE=&lt;angle&gt;</code></li>
 </ul>
+<h3 id="load_cell_probe_calibrate">LOAD_CELL_PROBE_CALIBRATE<a class="headerlink" href="#load_cell_probe_calibrate" title="Permanent link">&para;</a></h3>
+<p><code>LOAD_CELL_PROBE_CALIBRATE CALIBRATION=&lt;calibration_type&gt; [&lt;parameters&gt;]</code>: 
+Run automated calibration routines for load cell probe parameters. All calibrations
+probe a bed mesh and save results for the current session (use <code>SAVE_CONFIG</code> to persist).</p>
+<p>Available calibration types:</p>
+<ul>
+<li><code>DRIFT_FILTER</code>: Calibrate drift_filter_cutoff_frequency</li>
+<li><code>TAP_PERFORMANCE</code>: Calibrate pullback_distance and decompression_angle</li>
+</ul>
+<p>All calibrations accept <a href="#bed_mesh_calibrate">BED_MESH_CALIBRATE</a> parameters for 
+controlling mesh point generation (PROFILE, MESH_MIN, MESH_MAX, PROBE_COUNT, ALGORITHM, etc.).
+See <a href="Load_Cell.html#calibration">Load Cell Calibration</a> for detailed usage and examples.</p>
+<h4 id="drift_filter-calibration">DRIFT_FILTER Calibration<a class="headerlink" href="#drift_filter-calibration" title="Permanent link">&para;</a></h4>
+<p><code>LOAD_CELL_PROBE_CALIBRATE CALIBRATION=DRIFT_FILTER [MAXIMUM_Z_POSITION=&lt;pos&gt;] 
+[MAX_Z_VELOCITY=&lt;vel&gt;] [APPROACH_SPEED=&lt;speed&gt;] [SEGMENT_DURATION=&lt;duration&gt;] 
+[SLOPE_PERCENTILE=&lt;pct&gt;] [MAX_DRIFT_RATE=&lt;drift_rate&gt;] 
+[MAX_CUTOFF_FREQUENCY=&lt;freq&gt;] [CUTOFF_INCREMENT=&lt;inc&gt;] [&lt;bed_mesh_parameters&gt;]</code></p>
+<p>Calibrates the drift filter cutoff frequency by measuring force drift during slow Z 
+descents at each mesh point. The drift filter removes slow force changes caused by 
+bowden tube movement, keeping the signal centered on zero.</p>
+<ul>
+<li><strong>MAXIMUM_Z_POSITION</strong>: Starting height for drift measurement. If not specified, 
+  defaults to the printer's maximum Z position (the delta Z limit on delta printers).</li>
+<li><strong>MAX_Z_VELOCITY</strong>: Maximum speed for Z moves between points. If not specified, 
+  defaults to the kinematics <code>max_z_velocity</code>.</li>
+<li><strong>APPROACH_SPEED</strong>: Descent speed in mm/s during measurement (slower collects more 
+  data). The default is 10.0 or <code>MAX_Z_VELOCITY</code>, whichever is lower.
+  Values above <code>MAX_Z_VELOCITY</code> are limited to it.</li>
+<li><strong>SEGMENT_DURATION</strong>: Time window in seconds for drift analysis. The default is 5.0.</li>
+<li><strong>SLOPE_PERCENTILE</strong>: Which percentile of slopes must meet criteria (higher is 
+  stricter). The default is 99.0 (valid range: 0-100).</li>
+<li><strong>MAX_DRIFT_RATE</strong>: Maximum acceptable drift rate in grams/second. The 
+  default is 1.0.</li>
+<li><strong>MAX_CUTOFF_FREQUENCY</strong>: Upper limit for filter frequency in Hz. The default is 20.0.</li>
+<li><strong>CUTOFF_INCREMENT</strong>: Step size in Hz when searching for optimal frequency. The 
+  default is 0.1.</li>
+</ul>
+<p>See <a href="Load_Cell.html#drift-filter-calibration">Drift Filter Calibration</a></p>
+<h4 id="tap_performance-calibration">TAP_PERFORMANCE Calibration<a class="headerlink" href="#tap_performance-calibration" title="Permanent link">&para;</a></h4>
+<p><code>LOAD_CELL_PROBE_CALIBRATE CALIBRATION=TAP_PERFORMANCE [PULLBACK_DISTANCE=&lt;dist&gt;]
+[&lt;bed_mesh_parameters&gt;]</code></p>
+<p>Optimizes the <code>pullback_distance</code> parameter by measuring actual decompression distances during 
+normal probing across the bed. Computes a safe minimum using statistical analysis:
+<code>(mean + 3σ) × 2.0</code>.</p>
+<p>Then calibrates the <code>decompression_angle</code> used by the tap quality classifier from the
+same taps. The calibration fails if any tap does not pass the quality check.</p>
+<ul>
+<li><strong>PULLBACK_DISTANCE</strong>: Temporary pullback distance in mm to use during calibration 
+  testing. The default is 1.0 (valid range: 0.5-2.0).</li>
+</ul>
+<p>See <a href="Load_Cell.html#tap-performance-calibration">Tap Performance Calibration</a> and <a href="Load_Cell.html#decompression-angle-calibration">Decompression Angle Calibration</a> for choosing thresholds and interpreting results.</p>
 <h3 id="manual_probe">[manual_probe]<a class="headerlink" href="#manual_probe" title="Permanent link">&para;</a></h3>
 <p>The manual_probe module is automatically loaded.</p>
 <h4 id="manual_probe_1">MANUAL_PROBE<a class="headerlink" href="#manual_probe_1" title="Permanent link">&para;</a></h4>
@@ -11707,6 +11858,51 @@ the config.</li>
 homing (for use in e.g. non-standard homing routines) - will be reset
 automatically upon homing.</li>
 </ul>
+<h4 id="z_thermal_adjust_calibrate">Z_THERMAL_ADJUST_CALIBRATE<a class="headerlink" href="#z_thermal_adjust_calibrate" title="Permanent link">&para;</a></h4>
+<p><code>Z_THERMAL_ADJUST_CALIBRATE CALIBRATION=NOZZLE HEATER=&lt;heater&gt;
+ [COMPONENT=name] [PROBE=&lt;probe&gt;] [MIN_TEMP=&lt;value&gt;] [MAX_TEMP=&lt;value&gt;]
+ [MEASUREMENTS=&lt;count&gt;] [SOAK_TIME=&lt;seconds&gt;]
+ [Z_LIFT=&lt;mm&gt;] [Z_LIFT_SPEED=&lt;mm/s&gt;]</code>: Measures the
+thermal expansion of the nozzle and calculates the <code>temp_coeff</code> for the
+<code>[z_thermal_adjust]</code> section. The printer must be homed and the nozzle must be
+positioned over a clean spot on the bed where probing is possible.
+The command heats the nozzle from <code>MIN_TEMP</code> up to <code>MAX_TEMP</code>, and then back
+down to <code>MIN_TEMP</code> for a complete thermal cycle. It splits the temperature range
+into <code>MEASUREMENTS</code> steps. Each step starts with a pause for <code>SOAK_TIME</code>, probes
+to measure the nozzle and lifts the toolhead by <code>Z_LIFT</code> to resume heating. The
+heater is turned off when the command finishes or fails.
+A linear regression of the probe results against temperature gives the coefficient,
+which is reported and stored as the section's <code>temp_coeff</code>. Run <code>SAVE_CONFIG</code>
+to write it to the config file and restart. See also
+<a href="Load_Cell.html#nozzle-temperature-compensation">Nozzle Temperature Compensation</a>.</p>
+<ul>
+<li><code>CALIBRATION</code>: The type of calibration routine to run. Required. Only <code>NOZZLE</code> is currently
+supported; <code>FRAME</code> is reserved for future use.</li>
+<li><code>HEATER</code>: The name of the heater to calibrate with, typically <code>extruder</code>. Required.</li>
+<li><code>COMPONENT</code>: if multiple thermal adjustment are defined use <code>COMPONENT</code> to
+specify which one to calibrate.</li>
+<li><code>PROBE</code>: The probe to measure with, if more than one probe is configured.</li>
+<li><code>MIN_TEMP</code>: The lowest temperature to measure at. The default is 140.</li>
+<li><code>MAX_TEMP</code>: The highest temperature to measure at. It must be greater than
+<code>MIN_TEMP</code>. The default is 250.</li>
+<li><code>MEASUREMENTS</code>: The number of distinct temperatures to measure
+at between <code>MIN_TEMP</code> and <code>MAX_TEMP</code>, inclusive. The minimum is 2 and the
+default is 10. Each temperature is measured twice, once while heating and 
+once while cooling.</li>
+<li><code>SOAK_TIME</code>: Seconds to wait after the heater reaches each temperature, to
+let the nozzle and heatbreak reach thermal equilibrium. The default is 20.</li>
+<li><code>Z_LIFT</code>: Distance in mm to raise the toolhead after each probe. The default
+is 10.</li>
+<li><code>Z_LIFT_SPEED</code>: Speed in mm/s of the lift move. The default is 5.</li>
+</ul>
+<p>When the calculation completes the command reports the total elongation and
+temperature range measured and the resulting temperature coefficient. It also
+saves a plot of the measurements and fitted line as
+<code>nozzle_elongation_YYYY-MM-DD_HH-MM-SS.png</code> in the same directory as the
+Klipper log file, and prints a link to it (the link assumes
+<a href="https://github.com/Arksine/moonraker">Moonraker</a> serves the <code>logs</code> root).
+Plotting requires <code>matplotlib</code> and a configured log file; if there is no log
+file the plot is skipped.</p>
 <h3 id="z_calibration">⚠️ [z_calibration]<a class="headerlink" href="#z_calibration" title="Permanent link">&para;</a></h3>
 <p>The following commands are available when a
 <a href="Config_Reference.html#z_calibration">z_calibration config section</a> is enabled
